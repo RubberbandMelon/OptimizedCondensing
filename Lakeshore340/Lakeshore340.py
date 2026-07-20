@@ -14,14 +14,12 @@ class Lakeshore340:
     
     this code will only work if values 'C' and 'D' exist on the Lakeshore 340
     """
-    def __init__(self, COMport, baud = 9600, bytesize = serial.SEVENBITS, parity = serial.PARITY_ODD, wait_time = 0.1):
+    def __init__(self, COMport, baud = 9600, wait_time = 0.1):
         self.port = COMport
         self.is_open = False
         self.ID = 'LSCI,MODEL340'
         self.baud = baud
-        self.bytesize = bytesize
         self.wait_time = wait_time
-        self.parity = parity
         self.serial_connection = None
 
     def open(self):
@@ -32,8 +30,6 @@ class Lakeshore340:
             self.serial_connection = serial.Serial(
                 port=self.port,
                 baudrate=self.baud,
-                bytesize=self.bytesize,
-                parity=self.parity,
                 stopbits=serial.STOPBITS_ONE,
                 timeout=1
             )
