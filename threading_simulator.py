@@ -35,7 +35,6 @@ class SimulatedDevice:
                 new_measurement = Measurement(value = self.measurement.value + 1, timestamp = time.time())
                 self.measurement = new_measurement
                 self.measurement_condition.notify_all()
-                print(f'Device: \tvalue={new_measurement.value},\t setpoint = {self.setpoint}')
 
             if self.change_setpoint_event.is_set():
                 self.setpoint = self.new_setpoint
@@ -53,6 +52,23 @@ class SimulatedDevice:
         print(f"Device: \tReceived Command to change setpoint to {self.new_setpoint}")
         self.change_setpoint_event.set()
 
+    def kill(self):
+        self.kill_event.set()
+
+class SimulatedLogger:
+    def __init__(self, device):
+        self.device = device
+        self.kill_event = threading.Event()
+
+    def start_logger(self):
+        print('Logger:\tStarted Logger!')
+        last_timestamp = time.time()
+        while not self.kill_event.is_set():
+            # latest_measurement = self.device.wait_for_next_measurement(last_timestamp)
+            latest_measurement = self.device.measurement
+            print(f'Logger: \tNew Measurement! with value = {latest_measurement.value}')
+            last_timestamp = latest_measurement.timestamp
+            time.sleep(3)
     def kill(self):
         self.kill_event.set()
 
@@ -80,10 +96,12 @@ class SimulatedSequence:
 if __name__ == '__main__':
     device = SimulatedDevice()
     sequence = SimulatedSequence(device)
+    logger = SimulatedLogger(device)
     device_thread = threading.Thread(target = device.measurement_loop, args = ())
     sequence_thread = threading.Thread(target = sequence.start_sequence, args = ())
+    logger_thread = threading.Thread(target = logger.start_logger, args = ())
     print('Main: \t\tCreated Device')
     device_thread.start()
-    print('Main: \t\tStarted Started Measuring on device')
+    logger_thread.start()
     input("\nMain: \t\tPress Enter key to start sequence...\n")
     sequence_thread.start()
