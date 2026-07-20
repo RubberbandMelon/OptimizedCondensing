@@ -63,8 +63,13 @@ class Lakeshore340:
     # commands (list) : for example ['KRDG? A', 'KRDG? B', etc.]
     # returns : dict = for example {'KRDG? A' : a_value, 'KRDG? B' : b_value, etc.}
     # ----------------------------------------------------
-    def read_values(self, commands : list):
+    def read_values(self, commands):
         measurement = {'timestamp' : time.time()}
+
+        #check if commands is single string, if yes: insert into list
+        if isinstance(commands, str):
+            commands = [commands]
+
         if not self.is_open:
             print(f"Error: Connection to Lakeshore 340 on port {self.port} is not open.")
             return None
@@ -89,10 +94,14 @@ class Lakeshore340:
     # commands (list) : for example ['SETP 1,12.0', 'RANGE 3', etc.]
     # returns : None
     # ----------------------------------------------------
-    def set_values(self, commands : list):
+    def set_values(self, commands):
         if not self.is_open:
             print(f"Error: Connection to Lakeshore 340 on port {self.port} is not open.")
             return None
+
+        #check if commands is single string, if yes: insert into list
+        if isinstance(commands, str):
+            commands = [commands]
 
         for command in commands:
             self.serial_connection.write(f'{command}\n'.encode())
