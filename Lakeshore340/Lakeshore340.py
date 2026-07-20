@@ -22,6 +22,7 @@ class Lakeshore340:
         self.wait_time = wait_time
         self.serial_connection = None
 
+
     def open(self):
         if self.is_open:
             print(f"Connection to Lakeshore 340 already open on port {self.port}.")
@@ -57,9 +58,54 @@ class Lakeshore340:
             print(f"No open connection to Lakeshore 340 on port {self.port} to close.")
 
     # ----------------------------------------------------
+    # GENERAL FUNCTION FOR READING VALUES
+    # 
+    # commands (list) : for example ['KRDG? A', 'KRDG? B', etc.]
+    # returns : dict = for example {'KRDG? A' : a_value, 'KRDG? B' : b_value, etc.}
+    # ----------------------------------------------------
+    def read_values(self, commands : list):
+        measurement = {'timestamp' : time.time()}
+        if not self.is_open:
+            print(f"Error: Connection to Lakeshore 340 on port {self.port} is not open.")
+            return None
+
+        for command in commands: 
+            self.serial_connection.write(f'{command}\n'.encode())
+            self.serial.flush()
+            reply = self.serial_connection.readline().decode("ascii", errors="replace").strip()
+            time.sleep(self.wait_time)
+
+            try:
+                measurement[command] = float(reply.replace("%", ""))
+            except ValueError:
+                print(f"WARNING: response to {command} is not numeric: {reply}")
+                measurement[command] = -1
+
+        return measurement
+
+    # ----------------------------------------------------
+    # GENERAL FUNCTION FOR SETTING VALUES
+    # 
+    # commands (list) : for example ['SETP 1,12.0', 'RANGE 3', etc.]
+    # returns : None
+    # ----------------------------------------------------
+    def set_values(self, commands : list):
+        if not self.is_open:
+            print(f"Error: Connection to Lakeshore 340 on port {self.port} is not open.")
+            return None
+
+        for command in commands:
+            self.serial_connection.write(f'{command}\n'.encode())
+            self.serial.flush()
+            time.sleep(self.wait_time)
+        
+        return None
+
+    # ----------------------------------------------------
     # TEMPERATURE READINGS
     # if any value is -1, something went wrong with the reading
     # ----------------------------------------------------
+    @deprecated
     def read_temperature(self):
         measurement = {"A": -1, "B": -1, "C": -1, "D": -1, "Heater": -1}
 
@@ -89,6 +135,7 @@ class Lakeshore340:
     # ----------------------------------------------------
     # SORB SETPOINT
     # ----------------------------------------------------
+    @deprecated
     def set_sorb_setpoint(self, setpoint):
         if self.is_open:
             old_setpoint = self.read_sorb_setpoint()
@@ -98,6 +145,7 @@ class Lakeshore340:
         else:
             print(f"Error: Connection to Lakeshore 340 on port {self.port} is not open.")
 
+    @deprecated
     def read_sorb_setpoint(self):
         if self.is_open:
             self.serial_connection.write(b'SETP? 1\n')
@@ -111,8 +159,10 @@ class Lakeshore340:
 
     # ----------------------------------------------------
     # HEATER RANGE
+    # 
     # refer to table 1-6 of the Lakeshore 340 manual for valid range values
     # ----------------------------------------------------
+    @deprecated
     def set_heater_range(self, heater_range):
         if self.is_open:
             if heater_range not in [0, 1, 2, 3, 4, 5]:
@@ -126,6 +176,7 @@ class Lakeshore340:
         else:
             print(f"Error: Connection to Lakeshore 340 on port {self.port} is not open.")
 
+    @deprecated
     def read_heater_range(self):
         if self.is_open:
             self.serial_connection.write(b'RANGE?\n')
