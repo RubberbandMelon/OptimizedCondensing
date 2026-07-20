@@ -5,17 +5,13 @@ import time
 import numpy
 from dataclasses import dataclass
 import logging
+import copy
 
 settings = {
-    'Lakeshore340_COMport' : 'COM3',
+    'Lakeshore340_COMport' : '/dev/ttyUSB0',
     'Lakeshore340_baud' : 9600,
     'Lakeshore340_wait_time' : 0.1
 }
-
-@dataclass
-class Measurement:
-    value: float
-    timestamp: float 
 
 @dataclass
 class Command:
@@ -25,7 +21,7 @@ class Command:
 class Lakeshore340Manager:
     def __init__(self):
         # internal variables for handling measurements and setpoints
-        self.measurement = Measurement(value = 0, timestamp = time.time())
+        self.measurement = {'timestamp' : time.time()}
         self.setpoint = 0
         self.heater_range = 0
         # Lakeshore variables
@@ -33,82 +29,133 @@ class Lakeshore340Manager:
         self.baud = settings['Lakeshore340_baud']
         self.wait_time = settings['Lakeshore340_wait_time']
         self.lakeshore = Lakeshore340(self.COMport, baud = self.baud, wait_time = self.wait_time)
-        
         # threading variables (locks, conditions, etc.)
         self.lock = threading.Lock()
-        self.is_measuring_event = threading.Event()
         self.change_setpoint_event = threading.Event()
         self.change_heater_range_event = threading.Event()
         self.kill_event = threading.Event()
         self.measurement_condition = threading.Condition()
+        self.clman = None
 
-    def measurement_loop(self):
-        self.lakeshore.open()
-        self.is_measuring_event.set()
+    def measurement_loop(self, logclient_manager):
+        if not self.lakeshore.open():
+            print("ERROR: Unable to connect to Lakeshore340! Shutting down manager...")
+            return 
+        self.clman = logclient_manager
+
         while not self.kill_event.is_set():
-            waited_intervals = 5
             with self.measurement_condition:
-                self.measurement = Measurement(self.lakeshore.read_temperature(), time.time())
-                self.measurement_condition.notify_all()
-                print(f'Lakeshore: \tvalue={self.measurement.value},\t setpoint = {self.setpoint}')
+                # get active measurements and their settings from the Labmonitor
+                active_measurements = copy.copy(self.clman.active_measurements)
+                measurement_params = copy.copy(self.clman.measurement_params)
 
+                # create list of all new measurements
+                new_measurement = {'timestamp' : time.time()}
+                for measID in active_measurements:
+                    params = measurement_params[measID]
+                    command = params['command']
+                    value = self.lakeshore.read_values(command)[command]
+
+                    new_measurement[measID] = value
+
+                # save new measurements to object varibles
+                self.measurement = new_measurement
+                self.measurement_condition.notify_all()
+
+            # check for setpoint changes
             if self.change_setpoint_event.is_set():
                 self.lakeshore.set_sorb_setpoint(self.setpoint)
-                waited_intervals += waited_intervals
+                self.change_setpoint_event.clear()
 
+            # check for heater range changes
             if self.change_heater_range_event.is_set():
                 self.lakeshore.set_heater_range(self.heater_range)
                 self.change_heater_range_event.clear()
-                waited_intervals += waited_intervals
 
+            # sleep so long that the loops runs once every second
+            elapsed_time = time.time() - self.measurement['timestamp']
+            time.sleep(max(0, 1.0 - elapsed_time))
 
-        self.is_measuring_event.set()
         self.lakeshore.close()
 
     def wait_for_next_measurement(self, last_timestamp):
         with self.measurement_condition:
-            self.measurement_condition.wait_for(lambda: self.measurement.timestamp > last_timestamp or self.kill_event.is_set())
+            self.measurement_condition.wait_for(lambda: self.measurement['timestamp'] > last_timestamp or self.kill_event.is_set())
             return self.measurement
 
     def set_setpoint(self, command : Command):
         self.setpoint = command.new_value
-        self.change
-            # latest_measurement = self.device.wait_for_next_measurement(last_timestamp)_setpoint_event.set()
+        self.change_setpoint_event.set()
 
     def set_heater_range(self, command : Command):
-        self.heater_range = command.new_value
-        self.change_heater_range_event.set()
+        try:
+            self.heater_range = int(command.new_value)
+            self.change_heater_range_event.set()
+        except:
+            print("ERROR: heater range must be an integer!")
 
     def kill(self):
         self.kill_event.set()
 
 class LogClientManager:
-    def __init__(self, device):
+    def __init__(self):
         # LogClient variables
         self.cl = LogClient(host = 'http://127.0.0.1:5000/')
         self.cl_devType = 'Condense RaspberryPi'
         self.cl_version = '1.0'
         self.cl.initDevice(self.cl_devType, self.cl_version)
 
-        self.device = device
+        self.lsman = None
         self.kill_event = threading.Event()
 
-    def logging_loop(self):
+        # create and initialize list of active measurements and list dictionary of measurements
+        self.active_measurements = self.cl.getActiveMeasurements()
+        self.measurement_params = {'timestamp' : time.time()}
+        for measID in self.active_measurements:
+            self.measurement_params[measID] = self.cl.getMeasurementOptions(measID)
+        self.interval = 2 # TODO: extract from measurement_params
+
+    def logging_loop(self, lakeshore_manager):
+        self.lsman = lakeshore_manager
         while not self.kill_event.is_set():
-            for measID in self.cl.getActiveMeasurements():
-                params = cl.getActiveMeasurements(measID)
+
+            if self.cl.onlinePing():
+                # get new data from Labmonitor server via LogClient
+                new_active_measurements = self.cl.getActiveMeasurements()
+                new_measurement_params = {'timestamp' : time.time()}
+                for measID in new_active_measurements:
+                    new_measurement_params[measID] = self.cl.getMeasurementOptions(measID)
                 
+                # set internal variables to the new values
+                self.active_measurements = new_active_measurements
+                self.measurement_params = new_measurement_params
+                self.interval = 2 # TODO: extract from measurement_params
 
-            self.is_measuring_event.set()
+            # wait the set interval betwenn Labmonitor updates
+            time.sleep(self.interval)
 
-
-
+            # extract data from lsman object
+            for measID in self.active_measurements:
+                try:
+                    value = self.lsman.measurement[measID]
+                    try:
+                        self.cl.addLog(measID,value) 
+                    except:
+                        print(f'ERROR: clman unable to log measID={measID}, value={value:.3f}')
+                except:
+                    print(f'ERROR: clman unable to read measurment with measID={measID} from lsman')
+            
+    def kill(self):
+        self.kill_event.set()
 
 
 if __name__ == '__main__':
     lsman = Lakeshore340Manager()
-    lsman_thread = threading.Thread(target = lsman.measurement_loop)
+    clman = LogClientManager()
+    lsman_thread = threading.Thread(target = lsman.measurement_loop, args = (clman,))
+    clman_thread = threading.Thread(target = clman.logging_loop, args = (lsman,))
     logging.info('Initialized Lakeshore340 Manager')
     lsman_thread.start()
+    clman_thread.start()
     logging.info('Started Lakeshore340 Manager and measurement_loop')
 
