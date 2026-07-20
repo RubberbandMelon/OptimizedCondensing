@@ -5,20 +5,21 @@ Created on 06/30/2026
 last mod. 06/30/2026
 """
 import serial, time
+from deprecated import deprecated
 
 class Lakeshore340:
     """
     Lakeshore 340 Temperature Controller API
 
     set serial communications terminator to 'LF' on the Lakeshore 340 for this to work properly.
-    
-    this code will only work if values 'C' and 'D' exist on the Lakeshore 340
     """
-    def __init__(self, COMport, baud = 9600, wait_time = 0.1):
+    def __init__(self, COMport, baud = 9600, wait_time = 0.1, bytesize=serial.SEVENBITS, parity=serial.PARITY_ODD,):
         self.port = COMport
         self.is_open = False
         self.ID = 'LSCI,MODEL340'
         self.baud = baud
+        self.bytesize = bytesize
+        self.parity = parity
         self.wait_time = wait_time
         self.serial_connection = None
 
@@ -26,11 +27,13 @@ class Lakeshore340:
     def open(self):
         if self.is_open:
             print(f"Connection to Lakeshore 340 already open on port {self.port}.")
-            return
+            return True
         try:
             self.serial_connection = serial.Serial(
                 port=self.port,
                 baudrate=self.baud,
+                bytesize=self.bytesize,
+                parity=self.parity,
                 stopbits=serial.STOPBITS_ONE,
                 timeout=1
             )
@@ -38,7 +41,7 @@ class Lakeshore340:
             print(f"Connecting to Lakeshore 340 on port {self.port}...")
         except serial.SerialException as e:
             print(f"Failed to open connection to Lakeshore 340 on port {self.port}: {e}")
-            return
+            return False
         
         self.serial_connection.write(b'*IDN?\n')
         time.sleep(self.wait_time)
@@ -46,8 +49,10 @@ class Lakeshore340:
         if IDReply.rfind(self.ID) < 0:
             print(f"Error: Device ID mismatch. Expected {self.ID}, got {IDReply}")
             self.close()
+            return False
         else:
             print(f"Successfully connected to Lakeshore 340 on port {self.port}. Device ID: {IDReply}")
+            return True
 
     def close(self):
         if self.is_open:
@@ -72,11 +77,13 @@ class Lakeshore340:
 
         if not self.is_open:
             print(f"Error: Connection to Lakeshore 340 on port {self.port} is not open.")
-            return None
+            for command in commands:
+                measurement[command] = -1
+            return measurement
 
         for command in commands: 
             self.serial_connection.write(f'{command}\n'.encode())
-            self.serial.flush()
+            self.serial_connection.flush()
             reply = self.serial_connection.readline().decode("ascii", errors="replace").strip()
             time.sleep(self.wait_time)
 
@@ -105,7 +112,7 @@ class Lakeshore340:
 
         for command in commands:
             self.serial_connection.write(f'{command}\n'.encode())
-            self.serial.flush()
+            self.serial_connection.flush()
             time.sleep(self.wait_time)
         
         return None
@@ -132,7 +139,7 @@ class Lakeshore340:
             measurement["D"] = float(self.serial_connection.readline())
             time.sleep(self.wait_time)
             self.serial_connection.write(b'HTR?\n')
-            measurement["Heater"] = float(self.serial_connection.readline().replace("%", ""))
+            measurement["Heater"] = float(self.serial_connection.readline().decode().strip().replace("%", ""))
             time.sleep(self.wait_time)
 
         else:
@@ -144,7 +151,6 @@ class Lakeshore340:
     # ----------------------------------------------------
     # SORB SETPOINT
     # ----------------------------------------------------
-    @deprecated
     def set_sorb_setpoint(self, setpoint):
         if self.is_open:
             old_setpoint = self.read_sorb_setpoint()
@@ -171,7 +177,6 @@ class Lakeshore340:
     # 
     # refer to table 1-6 of the Lakeshore 340 manual for valid range values
     # ----------------------------------------------------
-    @deprecated
     def set_heater_range(self, heater_range):
         if self.is_open:
             if heater_range not in [0, 1, 2, 3, 4, 5]:
