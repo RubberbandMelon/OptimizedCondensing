@@ -23,7 +23,6 @@ class Command:
     timestamp : float
 
 class Lakeshore340Manager:
-
     def __init__(self):
         # internal variables for handling measurements and setpoints
         self.measurement = Measurement(value = 0, timestamp = time.time())
@@ -34,13 +33,10 @@ class Lakeshore340Manager:
         self.baud = settings['Lakeshore340_baud']
         self.wait_time = settings['Lakeshore340_wait_time']
         self.lakeshore = Lakeshore340(self.COMport, baud = self.baud, wait_time = self.wait_time)
-        # LogClient variables
-#        self.cl = LogClient(host = 'http://127.0.0.1:5000/')
-#        self.cl_devType = 'Lakeshore340'
-#        self.cl_version = '1.0'
-#        self.cl.initDevice(self.cl_devType, self.cl_version)
+        
         # threading variables (locks, conditions, etc.)
         self.lock = threading.Lock()
+        self.is_measuring_event = threading.Event()
         self.change_setpoint_event = threading.Event()
         self.change_heater_range_event = threading.Event()
         self.kill_event = threading.Event()
@@ -48,6 +44,7 @@ class Lakeshore340Manager:
 
     def measurement_loop(self):
         self.lakeshore.open()
+        self.is_measuring_event.set()
         while not self.kill_event.is_set():
             waited_intervals = 5
             with self.measurement_condition:
@@ -57,7 +54,6 @@ class Lakeshore340Manager:
 
             if self.change_setpoint_event.is_set():
                 self.lakeshore.set_sorb_setpoint(self.setpoint)
-                self.change_setpoint_event.clear()
                 waited_intervals += waited_intervals
 
             if self.change_heater_range_event.is_set():
@@ -65,9 +61,8 @@ class Lakeshore340Manager:
                 self.change_heater_range_event.clear()
                 waited_intervals += waited_intervals
 
-#            cl.onlinePing() 
-            time.sleep(1-waited_intervals*self.wait_time)
 
+        self.is_measuring_event.set()
         self.lakeshore.close()
 
     def wait_for_next_measurement(self, last_timestamp):
@@ -77,7 +72,8 @@ class Lakeshore340Manager:
 
     def set_setpoint(self, command : Command):
         self.setpoint = command.new_value
-        self.change_setpoint_event.set()
+        self.change
+            # latest_measurement = self.device.wait_for_next_measurement(last_timestamp)_setpoint_event.set()
 
     def set_heater_range(self, command : Command):
         self.heater_range = command.new_value
@@ -86,6 +82,28 @@ class Lakeshore340Manager:
     def kill(self):
         self.kill_event.set()
 
+class LogClientManager:
+    def __init__(self, device):
+        # LogClient variables
+        self.cl = LogClient(host = 'http://127.0.0.1:5000/')
+        self.cl_devType = 'Condense RaspberryPi'
+        self.cl_version = '1.0'
+        self.cl.initDevice(self.cl_devType, self.cl_version)
+
+        self.device = device
+        self.kill_event = threading.Event()
+
+    def logging_loop(self):
+        while not self.kill_event.is_set():
+            for measID in self.cl.getActiveMeasurements():
+                params = cl.getActiveMeasurements(measID)
+                
+
+            self.is_measuring_event.set()
+
+
+
+
 
 if __name__ == '__main__':
     lsman = Lakeshore340Manager()
@@ -93,3 +111,4 @@ if __name__ == '__main__':
     logging.info('Initialized Lakeshore340 Manager')
     lsman_thread.start()
     logging.info('Started Lakeshore340 Manager and measurement_loop')
+
