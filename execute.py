@@ -11,8 +11,7 @@ settings = {
     'Lakeshore340_COMport' : '/dev/ttyUSB0',
     'Lakeshore340_baud' : 9600,
     'Lakeshore340_wait_time' : 0.1,
-    '1K_TEMP_COMMAND' : 'KRDG? x'
-    # TODO: hardcode sorb pump temperature
+    '1K_TEMP_COMMAND' : 'KRDG? X'
 }
 
 # TODO: binary Labmonitor measurement for condensing
@@ -21,6 +20,11 @@ settings = {
 class Command:
     new_value : float
     timestamp : float
+    
+@dataclass
+class Measurement_1K:
+    value : float
+    timestamp : float
 
 class Lakeshore340Manager:
     def __init__(self):
@@ -28,6 +32,7 @@ class Lakeshore340Manager:
         self.measurement = {'timestamp' : time.time()}
         self.setpoint = 0
         self.heater_range = 0
+        self.measurement_1K = Measurement_1K(value = -1, timestamp = time.time())
         # Lakeshore variables
         self.COMport = settings['Lakeshore340_COMport']
         self.baud = settings['Lakeshore340_baud']
@@ -40,6 +45,7 @@ class Lakeshore340Manager:
         self.kill_event = threading.Event()
         self.measurement_condition = threading.Condition()
         self.clman = None
+        
 
     def measurement_loop(self, logclient_manager):
         if not self.lakeshore.open():
@@ -49,7 +55,7 @@ class Lakeshore340Manager:
 
         while not self.kill_event.is_set():
             with self.measurement_condition:
-                # get active measurements and their settings from the Labmonitor= copy.copy(self.clman.active_measurements)
+                # get active measurements and their settings from the Labmonitor
                 with self.data_lock:
                     active_measurements = copy.deepcopy(self.clman.active_measurements)
                     measurement_params = copy.deepcopy(self.clman.measurement_params)
@@ -57,14 +63,57 @@ class Lakeshore340Manager:
                 # create list of all new measurements
                 new_measurement = {'timestamp' : time.time()}
                 for measID in active_measurements:
-                    params = measurement_params[measID]
-                    command = params['command']
-                    value = self.lakeshore.read_values(command)[command]
+                    if measID not in measurement_params:
+                        new_measurement[measID] = -1
+                        print(f'ERROR: measID {measID} does not have any measurement paramters!')
+                        continue
 
+                    params = measurement_params[measID]
+                    if 'command' not in params:
+                        new_measurement[measID] = -1
+                        print(f'ERROR: measurement parameters for measID {measID} doesnt contain a command!')
+                        continue
+
+                    command = params['command']
+                    reply = self.lakeshore.read_values(command)
+                    if isinstance(reply, dict):
+                        value = reply.get(command, -1)
+                    else:
+                        value = -1
                     new_measurement[measID] = value
 
                 # save new measurements to object varibles
                 self.measurement = new_measurement
+
+                # check if 1K Temp is measured and do so if it isn't
+                COMMAND_1K_TEMP = settings['1K_TEMP_COMMAND']
+                measID_1K_TEMP = [
+                    measID
+                    for measID, params in measurement_params.items()
+                    if params.get("command", "").strip().upper() == COMMAND_1K_TEMP.strip().upper()
+                ]
+                if measID_1K_TEMP:
+                    self.measurement_1K = Measurement_1K(
+                        value = self.measurement.get(measID_1K_TEMP[0], -1),
+                        timestamp = self.measurement['timestamp']
+                    )
+                else:
+                    print('WARNING: 1K temp is not measured ')
+                    reply_measurement_1K = self.lakeshore.read_values(COMMAND_1K_TEMP)
+                    if isinstance(reply_measurement_1K, dict):
+                        value_1K = reply_measurement_1K.get(COMMAND_1K_TEMP, -1)
+                        timestamp_1K = reply_measurement_1K.get("timestamp", time.time())
+                    else:
+                        value_1K = -1
+                        timestamp_1K = time.time()
+                        print('ERROR: Lakeshore didnt return a dict on 1K request')
+
+                    self.measurement_1K = Measurement_1K(
+                        value=value_1K,
+                        timestamp=timestamp_1K
+                    )
+
+
                 self.measurement_condition.notify_all()
 
             # check for setpoint changes
@@ -87,6 +136,11 @@ class Lakeshore340Manager:
         with self.measurement_condition:
             self.measurement_condition.wait_for(lambda: self.measurement['timestamp'] > last_timestamp or self.kill_event.is_set())
             return self.measurement
+
+    def wait_for_next_1K_TEMP(self, last_timestamp):
+        with self.measurement_condition:
+            self.measurement_condition.wait_for(lambda: self.measurement_1K.timestamp > last_timestamp or self.kill_event.is_set())
+            return self.measurement_1K
 
     def set_setpoint(self, command : Command):
         self.setpoint = command.new_value
@@ -127,7 +181,7 @@ class LogClientManager:
         while not self.kill_event.is_set():
             # onlinePing 
             if self.next_update_times['ping'] <= time.time():
-                self.next_update_times['ping'] = time.time() + self.onlinePing_interval
+                self.next_update_times['ping'] = time.time() + float(self.onlinePing_interval)
                 if self.cl.onlinePing():
                     # get new data from Labmonitor server via LogClient
                     new_active_measurements = self.cl.getActiveMeasurements()
@@ -148,13 +202,13 @@ class LogClientManager:
                 # check if a value update is due
                 if self.next_update_times[measID] <= time.time():
                     # instantly schedule the next update
-                    self.next_update_times[measID] = time.time() + self.measurement_params[measID]['interval']
+                    self.next_update_times[measID] = time.time() + float(self.measurement_params[measID]['interval'])
                     try:
-                        value = self.lsman.measurement[measID]
+                        value = self.lsman.measurement.get(measID, -1)
                         try:
                             self.cl.addLog(measID,value) 
                         except:
-                            print(f'ERROR: clman unable to log measID={measID}, value={value:.3f}')
+                            print(f'ERROR: clman unable to log measID={measID}, value={value}')
                     except:
                         print(f'ERROR: clman unable to read measurment with measID={measID} from lsman')
             
