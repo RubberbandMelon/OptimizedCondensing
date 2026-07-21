@@ -10,8 +10,12 @@ import copy
 settings = {
     'Lakeshore340_COMport' : '/dev/ttyUSB0',
     'Lakeshore340_baud' : 9600,
-    'Lakeshore340_wait_time' : 0.1
+    'Lakeshore340_wait_time' : 0.1,
+    '1K_TEMP_COMMAND' : 'KRDG? x'
+    # TODO: hardcode sorb pump temperature
 }
+
+# TODO: binary Labmonitor measurement for condensing
 
 @dataclass
 class Command:
@@ -30,7 +34,7 @@ class Lakeshore340Manager:
         self.wait_time = settings['Lakeshore340_wait_time']
         self.lakeshore = Lakeshore340(self.COMport, baud = self.baud, wait_time = self.wait_time)
         # threading variables (locks, conditions, etc.)
-        self.lock = threading.Lock()
+        self.data_lock = threading.Lock()
         self.change_setpoint_event = threading.Event()
         self.change_heater_range_event = threading.Event()
         self.kill_event = threading.Event()
@@ -45,9 +49,10 @@ class Lakeshore340Manager:
 
         while not self.kill_event.is_set():
             with self.measurement_condition:
-                # get active measurements and their settings from the Labmonitor
-                active_measurements = copy.copy(self.clman.active_measurements)
-                measurement_params = copy.copy(self.clman.measurement_params)
+                # get active measurements and their settings from the Labmonitor= copy.copy(self.clman.active_measurements)
+                with self.data_lock:
+                    active_measurements = copy.deepcopy(self.clman.active_measurements)
+                    measurement_params = copy.deepcopy(self.clman.measurement_params)
 
                 # create list of all new measurements
                 new_measurement = {'timestamp' : time.time()}
@@ -104,47 +109,57 @@ class LogClientManager:
         self.cl_devType = 'Condense RaspberryPi'
         self.cl_version = '1.0'
         self.cl.initDevice(self.cl_devType, self.cl_version)
+        self.onlinePing_interval = 1.0
 
         self.lsman = None
         self.kill_event = threading.Event()
 
-        # create and initialize list of active measurements and list dictionary of measurements
+        # create and initialize list of active measurements and dictionary of measurements
         self.active_measurements = self.cl.getActiveMeasurements()
-        self.measurement_params = {'timestamp' : time.time()}
+        self.measurement_params = {}
+        self.next_update_times = {'ping' : time.time() + self.onlinePing_interval}
         for measID in self.active_measurements:
             self.measurement_params[measID] = self.cl.getMeasurementOptions(measID)
-        self.interval = 2 # TODO: extract from measurement_params
+            self.next_update_times[measID] = time.time() + float(self.measurement_params[measID]["interval"])
 
     def logging_loop(self, lakeshore_manager):
         self.lsman = lakeshore_manager
         while not self.kill_event.is_set():
+            # onlinePing 
+            if self.next_update_times['ping'] <= time.time():
+                self.next_update_times['ping'] = time.time() + self.onlinePing_interval
+                if self.cl.onlinePing():
+                    # get new data from Labmonitor server via LogClient
+                    new_active_measurements = self.cl.getActiveMeasurements()
+                    new_measurement_params = {}
+                    for measID in new_active_measurements:
+                        new_measurement_params[measID] = self.cl.getMeasurementOptions(measID)
+                        # create entry in next_update_times if measID is new
+                        if measID not in self.next_update_times:
+                            self.next_update_times[measID] = time.time() + float(new_measurement_params[measID]["interval"])
+                    
+                    # set internal variables to the new values
+                    with self.lsman.data_lock:
+                        self.active_measurements = new_active_measurements
+                        self.measurement_params = new_measurement_params
 
-            if self.cl.onlinePing():
-                # get new data from Labmonitor server via LogClient
-                new_active_measurements = self.cl.getActiveMeasurements()
-                new_measurement_params = {'timestamp' : time.time()}
-                for measID in new_active_measurements:
-                    new_measurement_params[measID] = self.cl.getMeasurementOptions(measID)
-                
-                # set internal variables to the new values
-                self.active_measurements = new_active_measurements
-                self.measurement_params = new_measurement_params
-                self.interval = 2 # TODO: extract from measurement_params
-
-            # wait the set interval betwenn Labmonitor updates
-            time.sleep(self.interval)
-
-            # extract data from lsman object
+            # iterate over all measID
             for measID in self.active_measurements:
-                try:
-                    value = self.lsman.measurement[measID]
+                # check if a value update is due
+                if self.next_update_times[measID] <= time.time():
+                    # instantly schedule the next update
+                    self.next_update_times[measID] = time.time() + self.measurement_params[measID]['interval']
                     try:
-                        self.cl.addLog(measID,value) 
+                        value = self.lsman.measurement[measID]
+                        try:
+                            self.cl.addLog(measID,value) 
+                        except:
+                            print(f'ERROR: clman unable to log measID={measID}, value={value:.3f}')
                     except:
-                        print(f'ERROR: clman unable to log measID={measID}, value={value:.3f}')
-                except:
-                    print(f'ERROR: clman unable to read measurment with measID={measID} from lsman')
+                        print(f'ERROR: clman unable to read measurment with measID={measID} from lsman')
             
+            time.sleep(0.05) # do this to prevent this loop from taking aaaaall cpu load
+
     def kill(self):
         self.kill_event.set()
 
@@ -158,4 +173,3 @@ if __name__ == '__main__':
     lsman_thread.start()
     clman_thread.start()
     logging.info('Started Lakeshore340 Manager and measurement_loop')
-
