@@ -39,6 +39,7 @@ class Lakeshore340:
             )
             self.is_open = True
             print(f"Connecting to Lakeshore 340 on port {self.port}...")
+            return True
         except serial.SerialException as e:
             print(f"Failed to open connection to Lakeshore 340 on port {self.port}: {e}")
             return False
