@@ -4,6 +4,9 @@ import numpy
 from dataclasses import dataclass 
 import queue
 
+from pathlib import Path
+from loguru import logger
+
 @dataclass
 class Measurement:
     value: float
@@ -27,8 +30,10 @@ class SimulatedDevice:
         self.command_queue = queue.Queue()
 
         self.measurement_condition = threading.Condition()
+        logger.debug('SimulatedDevice initialized')
 
     def measurement_loop(self):
+        logger.info('Started measurement_loop')
         while not self.kill_event.is_set():
 
             with self.measurement_condition:
@@ -59,6 +64,7 @@ class SimulatedLogger:
     def __init__(self, device):
         self.device = device
         self.kill_event = threading.Event()
+        logger.debug('SimulatedLogger initialized')
 
     def start_logger(self):
         print('Logger:\tStarted Logger!')
@@ -76,6 +82,7 @@ class SimulatedSequence:
     def __init__(self, device):
         self.device = device
         self.kill_event = threading.Event()
+        logger.debug('SimulatedSequence initialized')
 
     def start_sequence(self):
         print('Sequence:\tStarted sequence!')
@@ -94,13 +101,32 @@ class SimulatedSequence:
 
 
 if __name__ == '__main__':
+
+    # setup logger
+    Path("logs").mkdir(parents=True, exist_ok=True)
+    # Logdatei ohne ANSI-Farbcodes.
+    logger.add(
+        "simulator_logs/application.log",
+        level='DEBUG',
+#        format=FILE_FORMAT,
+        rotation="10 MB",
+        retention="14 days",
+        compression="zip",
+        encoding="utf-8",
+        enqueue=True,
+        backtrace=True,
+        diagnose=False,
+    )
+    logger.info('Started execute.py script')
     device = SimulatedDevice()
     sequence = SimulatedSequence(device)
-    logger = SimulatedLogger(device)
+    sim_logger = SimulatedLogger(device)
+    logger.debug('Initialized device, sequence and logger')
+    logger.info('Initializing threads...')
     device_thread = threading.Thread(target = device.measurement_loop, args = ())
     sequence_thread = threading.Thread(target = sequence.start_sequence, args = ())
-    logger_thread = threading.Thread(target = logger.start_logger, args = ())
-    print('Main: \t\tCreated Device')
+    logger_thread = threading.Thread(target = sim_logger.start_logger, args = ())
+    logger.info('Starting threads...')
     device_thread.start()
     logger_thread.start()
     input("\nMain: \t\tPress Enter key to start sequence...\n")
