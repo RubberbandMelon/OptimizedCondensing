@@ -424,6 +424,13 @@ class LogClientManager:
 
 
 if __name__ == '__main__':
+
+    log_format = (
+        "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
+        "<level>{level: <8}</level> | "
+        "<cyan>{extra[component]: <22}</cyan> | "
+        "<level>{message}</level>"
+    )
     
     # setup logger
     Path("logs").mkdir(parents=True, exist_ok=True)
@@ -431,6 +438,7 @@ if __name__ == '__main__':
     logger.remove()
     logger.add(
         "logs/execute.log",
+        format = log_format,
         level='TRACE',
         rotation="100 MB",
         retention="14 days",
@@ -443,6 +451,7 @@ if __name__ == '__main__':
     # create console log output
     logger.add(
         sys.stderr,
+        format = log_format,
         level = 'TRACE',
         colorize = True
     )
