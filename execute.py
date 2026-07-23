@@ -425,6 +425,8 @@ class LogClientManager:
 
 if __name__ == '__main__':
 
+
+    logger.configure(extra={"component": "execute"})
     log_format = (
         "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
         "<level>{level: <8}</level> | "
