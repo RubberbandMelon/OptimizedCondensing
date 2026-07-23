@@ -4,8 +4,12 @@ by S. Kloos
 Created on 06/30/2026
 last mod. 06/30/2026
 """
-import serial, time
+import time
+import serial
 from deprecated import deprecated
+from loguru import logger
+
+logger = logger.bind(component="Lakeshore340")
 
 class Lakeshore340:
     """
@@ -22,12 +26,13 @@ class Lakeshore340:
         self.parity = parity
         self.wait_time = wait_time
         self.serial_connection = None
-
+        logger.debug('Lakeshore340 initialized')
 
     def open(self):
         if self.is_open:
-            print(f"Connection to Lakeshore 340 already open on port {self.port}.")
+            logger.debug(f'Connection to Lakeshore 340 already open on port {self.port}')
             return True
+
         try:
             self.serial_connection = serial.Serial(
                 port=self.port,
@@ -38,30 +43,37 @@ class Lakeshore340:
                 timeout=1
             )
             self.is_open = True
-            print(f"Connecting to Lakeshore 340 on port {self.port}...")
-            return True
+            logger.debug(f'opening connection to Lakeshore340 on port {self.port}')
+
         except serial.SerialException as e:
-            print(f"Failed to open connection to Lakeshore 340 on port {self.port}: {e}")
+            logger.critical(f'Unable to open serial connection on port {self.port}: {e}')
             return False
-        
-        self.serial_connection.write(b'*IDN?\n')
+
+        self.serial_connection.write(b"*IDN?\n")
+        self.serial_connection.flush()
         time.sleep(self.wait_time)
-        IDReply = self.serial_connection.readline().decode().strip()
-        if IDReply.rfind(self.ID) < 0:
-            print(f"Error: Device ID mismatch. Expected {self.ID}, got {IDReply}")
+
+        IDReply = (
+            self.serial_connection.readline()
+            .decode("ascii", errors="replace")
+            .strip()
+        )
+
+        if self.ID not in IDReply:
+            logger.critical(f'Devide ID missmatch on Lakeshore340 connection: expected {self.ID} but got {IDReply}')
             self.close()
             return False
-        else:
-            print(f"Successfully connected to Lakeshore 340 on port {self.port}. Device ID: {IDReply}")
-            return True
+
+        logger.success(f'successfully connected to Lakeshore 340 on port {self.port}')
+        return True
 
     def close(self):
         if self.is_open:
             self.serial_connection.close()
             self.is_open = False
-            print(f"Connection to Lakeshore 340 on port {self.port} closed.")
+            logger.warning(f'closed connection to Lakeshore340 on port {self.port}')
         else:
-            print(f"No open connection to Lakeshore 340 on port {self.port} to close.")
+            logger.warning(f'No open connection to Lakeshore340 on port {self.port} to close')
 
     # ----------------------------------------------------
     # GENERAL FUNCTION FOR READING VALUES
@@ -76,8 +88,10 @@ class Lakeshore340:
         if isinstance(commands, str):
             commands = [commands]
 
+        logger.trace(f'Lakeshore340 received commands: {commands}')
+
         if not self.is_open:
-            print(f"Error: Connection to Lakeshore 340 on port {self.port} is not open.")
+            logger.error(f'Connection to Lakeshore340 on port {self.port} is not open')
             for command in commands:
                 measurement[command] = -1
             return measurement
@@ -85,15 +99,18 @@ class Lakeshore340:
         for command in commands: 
             self.serial_connection.write(f'{command}\n'.encode())
             self.serial_connection.flush()
+            logger.trace('Send request to Lakeshore340 via serial connection')
             reply = self.serial_connection.readline().decode("ascii", errors="replace").strip()
+            logger.trace(f'Got reply from Lakeshore340: {reply}')
             time.sleep(self.wait_time)
 
             try:
                 measurement[command] = float(reply.replace("%", ""))
             except ValueError:
-                print(f"WARNING: response to {command} is not numeric: {reply}")
+                logger.error(f'Lakeshore340 reply to command={command} is not numeric, reply={reply}')
                 measurement[command] = -1
 
+        logger.trace(f'Lakeshore.read_values returns measurement={measurement}')
         return measurement
 
     # ----------------------------------------------------
@@ -179,17 +196,28 @@ class Lakeshore340:
     # refer to table 1-6 of the Lakeshore 340 manual for valid range values
     # ----------------------------------------------------
     def set_heater_range(self, heater_range):
-        if self.is_open:
-            if heater_range not in [0, 1, 2, 3, 4, 5]:
-                print(f"Error: Invalid heater range {heater_range}. Valid values are 0, 1, 2, 3, 4, or 5.")
-                return
-            else:
-                old_range = self.read_heater_range()
-                self.serial_connection.write(f'RANGE {heater_range}\n'.encode())
-                time.sleep(self.wait_time)
-                print(f"Changed Lakeshore heater range from {old_range} to {heater_range}.")
-        else:
+        if not self.is_open:
             print(f"Error: Connection to Lakeshore 340 on port {self.port} is not open.")
+            return False
+
+        try:
+            heater_range = int(heater_range)
+        except (TypeError, ValueError):
+            print(f"Error: Invalid heater range {heater_range!r}.")
+            return False
+
+        if heater_range not in range(6):
+            print(
+                f"Error: Invalid heater range {heater_range}. "
+                f"Valid values are 0 through 5."
+            )
+            return False
+
+        old_range = self.read_heater_range()
+        self.set_values(f"RANGE {heater_range}")
+
+        print(f"Changed Lakeshore heater range from {old_range} to {heater_range}.")
+        return True
 
     @deprecated
     def read_heater_range(self):
