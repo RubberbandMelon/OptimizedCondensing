@@ -1,6 +1,12 @@
 import time
 import math
 import RPi.GPIO as GPIO
+from loguru as logger
+
+logger = logger.bind(component="Motor")
+
+INITIALIZE_GAP = 200e-3     # 200 milliseconds, mandatory t1 time
+DIR_PULSE_GAP = 10e-6       # 10 microseconds, mandatory t2 time
 
 class Motor:
     """
@@ -19,39 +25,50 @@ class Motor:
         GPIO.setmode(GPIO.BCM)
         GPIO.setwarnings(False)
 
-
+        # define variables
         self.pulse_pin = pulse_pin
         self.dir_pin = dir_pin
         self.enable_pin = enable_pin
         self.pulses_per_rev = pulses_per_rev
 
-    def init(self):
+        # GPIO setup
         GPIO.setup(self.pulse_pin, GPIO.OUT)
         GPIO.setup(self.dir_pin, GPIO.OUT)
         GPIO.setup(self.enable_pin, GPIO.OUT)
-
         GPIO.output(self.pulse_pin, GPIO.LOW)
         GPIO.output(self.dir_pin, GPIO.LOW)
-
         GPIO.output(self.enable_pin, GPIO.HIGH)
-        time.sleep(200e-6)  # 200 microseconds, mandatory t1 time
 
-    def turn(self, degree):
+        logger.debug(f'Motor initialized with {self.pulses_per_rev} pulses per revolution')
+        time.sleep(INITIALIZE_GAP)  
+
+    def turn(self, degree, revs_per_second):
         number_of_pulses = abs(round(self.pulses_per_rev * degree / 360.0))
+        pulse_frequency = self.pulses_per_rev * revs_per_second
 
-        if degree < 0:
+        # speed check
+        if pulse_frequency > 5e5:
+            logger.error(f'chosen pulse frequency is too fast! given={pulse_frequency} Hz, maximum=500 kHz')
+            return
+        
+        half_pulse_duration = 1/(2*pulse_frequency)
+
+        # turn direction
+        if degree > 0:
             GPIO.output(self.dir_pin, GPIO.HIGH)
         else:
             GPIO.output(self.dir_pin, GPIO.LOW)
+        time.sleep(DIR_PULSE_GAP)  
 
-        time.sleep(10e-6)  # 10 microseconds, mandatory t2 time
-
+        logger.trace('motor starts turning...')
         for _ in range(number_of_pulses):
             GPIO.output(self.pulse_pin, GPIO.HIGH)
-            time.sleep(5e-6)  # 5 microseconds, mandatory t3 time
+            time.sleep(half_pulse_duration)
 
             GPIO.output(self.pulse_pin, GPIO.LOW)
-            time.sleep(1000e-6)  # 1000 microseconds, mandatory t4 time
+            time.sleep(half_pulse_duration)
+        logger.trace('motor turn complete!')
 
     def cleanup(self):
         GPIO.output(self.enable_pin, GPIO.LOW)
+        logger.debug('Motor was shut down')
