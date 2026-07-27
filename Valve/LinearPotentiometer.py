@@ -11,22 +11,22 @@ class LinearPotentiometer:
     - Set valveX_CLOSE to a value, where you are happy with the closedness of the valve.
     - Position is dimensioned as 0 = your CLOSED voltage, 1 = your OPEN voltage, and values in between are linearly interpolated.
     
-    CODE ADVICSE:
+    CODE ADVISE:
     - for better stability, use a single instance of the ADC object by passing it to the next LinaerPotentiometer object you define
     - you can get said adc object from your first LinearPotentiometer instance with 'linear_potentiometer.adc'
 
     author: Simon Kloos, Institute for Functional Matter and Quantum Technologies, University of Stuttgart, Germany
     created: 2024-07-08
-    last-updated: 2026-07-15
+    last-updated: 2026-07-24
     '''
     
     def __init__(
         self, 
         adc = None,                     # if you aleady have on LinearPotentiometer object, you can pass the adc object to the next one to avoid multiple instances of the ADC class
         ADC_ADRESSES = (0x68, 0x68),    # I2C address of the ADC Differential Pi board. the chip on 0x69 is broken, only use channel 5-8 !
-        CHANNEL = 5,        # channel on which Linear Poti 1 is connected
-        valve_OPEN = 0.0,               # calibration: voltage reading when valve 1 is open
-        valve_CLOSED = 2.0,             # calibration: voltage reading when valve 1 is closed
+        CHANNEL = 5,                    # channel on which Linear Poti is connected
+        valve_OPEN = 0.0,               # calibration: voltage reading when valve is open
+        valve_CLOSED = 2.0,             # calibration: voltage reading when valve is closed
     ):
         self.ADC_ADDRESS_1 = ADC_ADRESSES[0]
         self.ADC_ADDRESS_2 = ADC_ADRESSES[1]
@@ -39,20 +39,21 @@ class LinearPotentiometer:
         else:
             self.adc = adc
 
-    def read_voltages(self, mute = True):
+    def read_voltage(self, mute = True):
         voltage = self.adc.read_voltage(self.CHANNEL)
         if not mute:
             print(f"Voltage reading from channel {self.CHANNEL}: {voltage:.3f} V")
         return voltage
     
-    def convert_voltages_to_positions(self):
-        span = self.valve_OPEN - self.valve_CLOSE
-        position = (self.voltage - self.valve_CLOSE) / span
+    def convert_voltages_to_positions(self, voltage):
+        span = (self.valve_OPEN - self.valve_CLOSE)
+        position = (voltage - self.valve_CLOSE) / span
         return position
         
-    def get_positions(self, mute = True):
-        voltage = self.read_voltages(mute = True)
+    def get_position(self, mute = True):
+        voltage = self.read_voltage(mute = True)
         position = self.convert_voltages_to_positions(voltage)
-        print(f"Position of ADC CHANNEL {self.CHANNEL}: {position:.3f} at {voltage:.3f} V.")
+        if mute == False:
+            print(f"Position of ADC CHANNEL {self.CHANNEL}: {position:.3f} at {voltage:.3f} V.")
         return position
 
