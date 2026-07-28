@@ -1,8 +1,9 @@
 from Lakeshore340.Lakeshore340 import Lakeshore340
 from LogClient.LogClient import LogClient
+from Valve.Valve import Valve
 import threading
 import time
-import numpy
+import numpy as np
 from dataclasses import dataclass
 import copy
 from loguru import logger
@@ -14,7 +15,21 @@ settings = {
     'Lakeshore340_baud' : 9600,
     'Lakeshore340_wait_time' : 0.1,
     '1K_TEMP_COMMAND' : 'KRDG? B',
-    'measurement_interval' : 1.0
+    'SORB_TEMP_COMMAND' : 'KRDG? A',
+    'measurement_interval' : 1.0,
+
+    'VALVE_SORB_CHANNEL' : 6,
+    'VALVE_SORB_PULSE' : 16,
+    'VALVE_SORB_DIR' : 18,
+    'VALVE_1K_CHANNEL' : 5,
+    'VALVE_1K_PULSE' : 5,
+    'VALVE_1K_DIR' :  6,
+    'ADC_ADDRESSES' : (0x68, 0x68),
+
+    'VALVE_SORB_OPEN' : 2,
+    'VALVE_SORB_CLOSED' : 0.2,
+    'VALVE_1K_OPEN' : 2,
+    'VALVE_1K_CLOSED' : 0.2
 }
 
 # TODO: binary Labmonitor measurement for condensing
@@ -26,6 +41,11 @@ class Command:
     
 @dataclass
 class Measurement_1K:
+    value : float
+    timestamp : float
+
+@dataclass
+class Measurement_SORB_TEMP:
     value : float
     timestamp : float
 
@@ -54,6 +74,7 @@ class Lakeshore340Manager:
         self.setpoint = 0
         self.heater_range = 0
         self.measurement_1K = Measurement_1K(value = -1, timestamp = time.time())
+        self.measurement_sorb_temp = Measurement_SORB_TEMP(value = -1, timestamp = time.time())
         # Lakeshore variables
         self.COMport = settings['Lakeshore340_COMport']
         self.baud = settings['Lakeshore340_baud']
@@ -98,10 +119,13 @@ class Lakeshore340Manager:
             #6 1K TEMP Fallback - hardcoded section
                 #6.1 If 1K TEMP is already measured, copy it to internal variable measurement_1K
                 #6.2 If not, read 1K TEMP from Lakeshore340 and save it to internal variable measurement_1K
-            #7 Release measurement_condition and notify about that
-            #8 change sorb setpoint if event is set
-            #9 change heater range if event is set
-            #10 sleep so long that measurements happen at measurement_interval
+            #7 SROB TEMP Fallback - hardcoded section
+                #7.1 If SORB TEMP is already measured, copy it to internal variable measurement_SORB_TEMP
+                #7.2 If not, read SORB TEMP from Lakeshore340 and save it to internal variable measurement_SORB_TEMP
+            #8 Release measurement_condition and notify about that
+            #9 change sorb setpoint if event is set
+            #10 change heater range if event is set
+            #11 sleep so long that measurements happen at measurement_interval
         Returns:
             - None
         '''
@@ -196,25 +220,59 @@ class Lakeshore340Manager:
                     )
                     logger.trace(f'1K TEMP FALLBACK: measured 1K TEMP = {self.measurement_1K.value} K')
 
-                #7 Release measurement_condition and notify about that
+                #7 SORB TEMP Fallback - hardcoded section
+                COMMAND_SORB_TEMP = settings['SORB_TEMP_COMMAND']
+                measID_SORB_TEMP = [
+                    measID
+                    for measID, params in measurement_params.items()
+                    if params.get("command", "").strip().upper() == COMMAND_SORB_TEMP.strip().upper()
+                ]
+
+                #7.1 If SORB TEMP is already measured, copy it to internal variable measurement_sorb_temp
+                if measID_SORB_TEMP:
+                    self.measurement_sorb_temp = Measurement_SORB_TEMP(
+                        value = self.measurement.get(measID_SORB_TEMP[0], -1),
+                        timestamp = self.measurement['timestamp']
+                    )
+                    logger.trace('SORB TEMP FALLBACK: found SORB TEMP measurement')
+
+                #7.2 If not, read SORB TEMP from Lakeshore340 and save it to internal variable measurement_sorb_temp
+                else:
+                    logger.warning('SORB TEMP FALLBACK: sorb temp is not measured! reverting to fallback measurement')
+                    reply_measurement_sorb_temp = self.lakeshore.read_values(COMMAND_SORB_TEMP)
+                    if isinstance(reply_measurement_sorb_temp, dict):
+                        value_sorb_temp = reply_measurement_sorb_temp.get(COMMAND_SORB_TEMP, -1)
+                        timestamp_sorb_temp = reply_measurement_sorb_temp.get("timestamp", time.time())
+                    else:
+                        value_sorb_temp = -1
+                        timestamp_sorb_temp = time.time()
+                        logger.error('SORB TEMP FALLBACK: Lakeshore340 did not return a dictionary on fallback sorb temp request')
+
+                    self.measurement_sorb_temp = Measurement_SORB_TEMP(
+                        value=value_sorb_temp,
+                        timestamp=timestamp_sorb_temp
+                    )
+                    logger.trace(f'SORB TEMP FALLBACK: measured SORB TEMP = {self.measurement_sorb_temp.value} K')
+
+                #8 Release measurement_condition and notify about that
                 logger.trace('measurement_loop : released measurement_condition and notified all threads that measurement is done')
                 self.measurement_condition.notify_all()
 
-            #8 change sorb setpoint if event is set
+            #9 change sorb setpoint if event is set
             if self.change_setpoint_event.is_set():
                 logger.debug(f'info : registered new sorb setpoint = {self.setpoint} K. sending request to Lakeshore340')
                 self.lakeshore.set_sorb_setpoint(self.setpoint)
                 logger.success(f'sorb setpoint set to {self.setpoint} K')
                 self.change_setpoint_event.clear()
 
-            #9 change heater range if event is set
+            #10 change heater range if event is set
             if self.change_heater_range_event.is_set():
                 logger.debug(f'info : registered new heater range = {self.heater_range}. sending request to Lakeshore340')
                 self.lakeshore.set_heater_range(self.heater_range)
                 logger.success(f'heater range set to {self.heater_range}')
                 self.change_heater_range_event.clear()
 
-            #10 sleep so long that measurements happen at measurement_interval
+            #11 sleep so long that measurements happen at measurement_interval
             elapsed_time = time.time() - self.measurement['timestamp']
             sleep_time = max(0, settings['measurement_interval'] - elapsed_time)
             logger.trace(f'measurement_loop : sleeping for {sleep_time} s')
@@ -261,6 +319,21 @@ class Lakeshore340Manager:
             self.measurement_condition.wait_for(lambda: self.measurement_1K.timestamp > last_timestamp or self.kill_event.is_set())
             logger.trace('New 1K measurement done and now handed to requester!')
             return self.measurement_1K
+
+    def wait_for_next_SORB_TEMP(self, last_timestamp):
+        '''
+        waits for new SORB TEMP measurement and returns it
+
+        Arguments:
+            - last_timestamp: timestamp of the last SORB TEMP measurement the requester has
+
+        Returns:
+            Measurement object: value = SORB TEMP, timestamp = timestamp of measurement
+        '''
+        with self.measurement_condition:
+            self.measurement_condition.wait_for(lambda: self.measurement_sorb_temp.timestamp > last_timestamp or self.kill_event.is_set())
+            logger.trace('New SORB TEMP measurement done and now handed to requester!')
+            return self.measurement_sorb_temp
 
     def set_setpoint(self, command : Command):
         '''
@@ -422,9 +495,137 @@ class LogClientManager:
         self.kill_event.set()
         logger.debug('Set LogClientManager.kill_event')
 
+class CondenseSequence():
+    '''
+    Class that houses the condense sequence
+
+    functions:
+        - run(self, lsman, clman): executes the condense sequence
+    '''
+
+    def __init__(self):
+        self.valve_sorb = Valve(
+            name = 'VALVE_SORB', 
+            pulse_pin = settings['VALVE_SORB_PULSE'],
+            dir_pin = settings['VALVE_SORB_DIR'],
+            CHANNEL = settings['VALVE_SORB_CHANNEL'],
+            valve_OPEN = settings['VALVE_SORB_OPEN'],
+            valve_CLOSED = settings['VALVE_SORB_CLOSED'],
+            ADC_ADRESSES = settings['ADC_ADDRESSES']    
+        )
+        self.valve_1K = Valve(
+            name = 'VALVE_1K', 
+            pulse_pin = settings['VALVE_1K_PULSE'],
+            dir_pin = settings['VALVE_1K_DIR'],
+            CHANNEL = settings['VALVE_1K_CHANNEL'],
+            valve_OPEN = settings['VALVE_1K_OPEN'],
+            valve_CLOSED = settings['VALVE_1K_CLOSED'],
+            ADC_ADRESSES = settings['ADC_ADDRESSES'],
+            adc = self.valve_sorb.ad_converter
+        )
+        self.valve_sorb.link_other_valve(self.valve_1K)
+        self.valve_1K.link_other_valve(self.valve_sorb)
+        self.lsman = None
+        self.clman = None
+        logger.debug('CondenseSequence initialized!')
+
+    def run(self, lsman, clman):
+        self.lsman = lsman
+        self.clman = clman
+
+        TEMP_1K = lsman.wait_for_next_1K_TEMP(time.time())
+        TEMP_SORB = lsman.wait_for_next_SORB_TEMP(time.time())
+
+        '''2. on LakeShore controller: set ”heater range” to 4 W'''
+        lsman.set_heater_range(Command(4, time.time()))
+
+        ''' 3. set ”setpoint” for Tsorb to 15 K −> wait until T1K < 1.9 K  
+            4. increase to 20 K wait again until T1K < 1.9 K               
+                       ... 25 K ...                                         '''
+        for setpoint in [15.0, 20.0, 25.0]:
+            # set setpoint to 15, 20, 25 K
+            lsman.set_setpoint(Command(setpoint, time.time()))
+
+            # wait for SORB to reach setpoint
+            TEMP_SORB = lsman.wait_for_next_SORB_TEMP(TEMP_SORB.timestamp)
+            while abs(TEMP_SORB.value - setpoint) > 0.25:
+                TEMP_SORB = lsman.wait_for_next_SORB_TEMP(TEMP_SORB.timestamp)
+
+            # wait for 1K to go under 1.9 K
+            TEMP_1K = lsman.wait_for_next_1K_TEMP(TEMP_1K.timestamp)
+            while TEMP_1K.value < 0 or TEMP_1K.value >= 1.9:
+                TEMP_1K = lsman.wait_for_next_1K_TEMP(TEMP_1K.timestamp)
+
+        ''' 5. open 1K-valve on manifold and close sorb-valve (remember to open the 1K-valve before closing the 
+            sorb-valve, they should never both be closed.)                                                          '''
+        self.valve_1K.open_valve()
+        time.sleep(5)
+        self.valve_sorb.close_valve()
+
+        ''' 6. continue increasing the temperature increase to 30 K wait again until T1K < 1.9 K
+                                                        ... 35 K ...                                '''
+        for setpoint in [30.0, 35.0]:
+            # set setpoint to 30, 35 K
+            lsman.set_setpoint(Command(setpoint, time.time()))
+
+            # wait for SORB to reach setpoint
+            TEMP_SORB = lsman.wait_for_next_SORB_TEMP(TEMP_SORB.timestamp)
+            while abs(TEMP_SORB.value - setpoint) > 0.25:
+                TEMP_SORB = lsman.wait_for_next_SORB_TEMP(TEMP_SORB.timestamp)
+
+            # wait for 1K to go under 1.9 K
+            TEMP_1K = lsman.wait_for_next_1K_TEMP(TEMP_1K.timestamp)
+            while TEMP_1K.value < 0 or TEMP_1K.value >= 1.9:
+                TEMP_1K = lsman.wait_for_next_1K_TEMP(TEMP_1K.timestamp)
+
+        ''' 7. once T_sorb = 35 K is stable, set directly to 50 K setpoint'''
+        # store T_sorb of the last 60 measurements and check if it is always within 0.25 K of 35 K
+        last_60_SORB_TEMP = np.full(60, 1e7, dtype = float)
+        latest_timestamp = time.time()
+        while not all(abs(last_60_SORB_TEMP - 35.0) <= 0.25):
+            # move each entry one index up
+            last_60_SORB_TEMP[:-1] = last_60_SORB_TEMP[1:]
+            latest_sorb_measurement = lsman.wait_for_next_SORB_TEMP(latest_timestamp)
+
+            # store latest measurement into last index
+            last_60_SORB_TEMP[-1] = latest_sorb_measurement.value
+            latest_timestamp = latest_sorb_measurement.timestamp
+
+        # set setpoint to 50 K
+        lsman.set_setpoint(Command(50.0, time.time()))
+
+        ''' 8. once Tsorb = 50 K is reached, set setpoint back to 12 K'''
+        # wait for SORB to reach setpoint 50 K
+        TEMP_SORB = lsman.wait_for_next_SORB_TEMP(latest_timestamp)
+        while TEMP_SORB.value < 50.0:
+            TEMP_SORB = lsman.wait_for_next_SORB_TEMP(TEMP_SORB.timestamp)
+
+        # set setpoint to 12 K and heater range to 3 (400 mW)
+        lsman.set_setpoint(Command(12.0, time.time()))
+        lsman.set_heater_range(Command(3, time.time()))
+
+        ''' 10. once Tsorb < 30K, open sorb-valve on manifold and close 1K-valve'''
+        # wait for SORB to go under 30 K
+        while TEMP_SORB.value == -1 or TEMP_SORB.value >= 30.0:
+            TEMP_SORB = lsman.wait_for_next_SORB_TEMP(TEMP_SORB.timestamp)
+
+        # opening/closing valves
+        self.valve_sorb.open_valve()
+        time.sleep(5)
+        self.valve_1K.close_valve()
+
+        ''' 11. adjust needle valve to T1K ≈ 2.03 K '''
+        # TODO: maybe implement telegram bot warning to come to the lab?
+
+        ''' 12. flip 3-point valve to flow controller when Tsorb < 20 K'''
+        # TODO 3-point valve might be unnecessary
+
+        ''' 13. 13. repeat needle valve adjustment as described above'''
+        # TODO
+
+
 
 if __name__ == '__main__':
-
 
     logger.configure(extra={"component": "execute"})
     log_format = (
@@ -433,7 +634,6 @@ if __name__ == '__main__':
         "<cyan>{extra[component]: <22}</cyan> | "
         "<level>{message}</level>"
     )
-    
     # setup logger
     Path("logs").mkdir(parents=True, exist_ok=True)
     # create log file
@@ -462,6 +662,7 @@ if __name__ == '__main__':
     logger.debug('initiating manager objects')
     lsman = Lakeshore340Manager()
     clman = LogClientManager()
+    condense_sequence = CondenseSequence()
     # initiate threads
     logger.debug('initiating manager threads')
     lsman_thread = threading.Thread(target = lsman.measurement_loop, args = (clman,))
@@ -470,11 +671,20 @@ if __name__ == '__main__':
     logger.debug('starting manager threads')
     lsman_thread.start()
     clman_thread.start()
+    
 
 
     try:
-        lsman_thread.join()
-        clman_thread.join()
+        while True:
+            commandline_input = input("Type condense to start condense:")
+            if commandline_input.strip().lower() == "condense":
+                condense_thread = threading.Thread(
+                    target=condense_sequence.run,
+                    args=(lsman, clman),
+                    name="CondenseSequence",
+                )
+                condense_thread.start()
+                condense_thread.join()
 
     except KeyboardInterrupt:
         logger.warning("Keyboard interrupt received, shutting down")
