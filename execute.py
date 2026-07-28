@@ -559,7 +559,11 @@ class CondenseSequence():
         ''' 5. open 1K-valve on manifold and close sorb-valve (remember to open the 1K-valve before closing the 
             sorb-valve, they should never both be closed.)                                                          '''
         self.valve_1K.open_valve()
-        time.sleep(5)
+
+        confirmation = ''
+        while confirmation is not '1K open':
+            confirmation != input('Press 1K open to confirm that 1K valve is open:')
+#        time.sleep(5)
         self.valve_sorb.close_valve()
 
         ''' 6. continue increasing the temperature increase to 30 K wait again until T1K < 1.9 K
@@ -611,7 +615,11 @@ class CondenseSequence():
 
         # opening/closing valves
         self.valve_sorb.open_valve()
-        time.sleep(5)
+#       time.sleep(5)
+
+        confirmation = ''
+        while confirmation != 'SORB open':
+            confirmation = input('Press SORB open to confirm that sorb valve is open:')
         self.valve_1K.close_valve()
 
         ''' 11. adjust needle valve to T1K ≈ 2.03 K '''

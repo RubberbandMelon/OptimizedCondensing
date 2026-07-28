@@ -45,24 +45,24 @@ class Valve:
 
         
     def open_valve(self):
-        if self.linked_valve is None:
-            self.logger.error(f'valve {self.name} was not linked at the time of opening request')
-            return
-        if self.is_open():
-            self.logger.warning(f'tried opening valve {self.name}, but it is already open!')
-            return
+#        if self.linked_valve is None:
+#            self.logger.error(f'valve {self.name} was not linked at the time of opening request')
+#            return
+#        if self.is_open():
+#            self.logger.warning(f'tried opening valve {self.name}, but it is already open!')
+#            return
         self.motor.turn(-1150, MOTOR_REVS_PER_SECOND)
 
     def close_valve(self):
-        if self.linked_valve is None:
-            self.logger.error(f'valve {self.name} was not linked at the time of closing request')
-            return
-        if not self.linked_valve.is_open():
-            self.logger.error(f'tried closing valve {self.name}, but linked valve {self.linked_valve.name} is already closed! aborting!')
-            raise ValveSecurityException(f'tried closing valve {self.name}, but linked valve {self.linked_valve.name} is already closed! aborting!', valve_name = self.name)
-        if self.is_closed():
-            self.logger.warning(f'tried closing valve {self.name}, but it is already closed!')
-            return
+ #       if self.linked_valve is None:
+ #           self.logger.error(f'valve {self.name} was not linked at the time of closing request')
+ #           return
+ #       if not self.linked_valve.is_open():
+ #           self.logger.error(f'tried closing valve {self.name}, but linked valve {self.linked_valve.name} is already closed! aborting!')
+ #           raise ValveSecurityException(f'tried closing valve {self.name}, but linked valve {self.linked_valve.name} is already closed! aborting!', valve_name = self.name)
+ #       if self.is_closed():
+ #           self.logger.warning(f'tried closing valve {self.name}, but it is already closed!')
+ #           return
         self.motor.turn(1150, MOTOR_REVS_PER_SECOND)
 
     def is_open(self):
