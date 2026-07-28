@@ -51,7 +51,7 @@ class Valve:
         if self.is_open():
             self.logger.warning(f'tried opening valve {self.name}, but it is already open!')
             return
-        self.motor.turn(-1150, MOTOR_REVS_PER_SECOND)
+        self.motor.turn(1150, MOTOR_REVS_PER_SECOND)
 
     def close_valve(self):
         if self.linked_valve is None:
@@ -63,7 +63,7 @@ class Valve:
         if self.is_closed():
             self.logger.warning(f'tried closing valve {self.name}, but it is already closed!')
             return
-        self.motor.turn(1150, MOTOR_REVS_PER_SECOND)
+        self.motor.turn(-1150, MOTOR_REVS_PER_SECOND)
 
     def is_open(self):
         if self.poti.get_position() > 0.95:
