@@ -37,10 +37,9 @@ class LogClient:
             time.sleep(1)
     '''
     def __init__(self,host='http://127.0.0.1:5000/'): 
-        logging.basicConfig()
         self.log=logger.bind(component="Lakeshore340")
         #self.log.setLevel(logging.INFO)#.INFO)#
-        self.log.debug('Logging initialized')
+        self.log.info('Logging initialized')
 
         self.host=host
         self.deviceId=-1
@@ -72,7 +71,7 @@ class LogClient:
         returns 1 if any parameter changed
                 0 if not
         '''
-        self.log.debug('Ping to LogServer')
+        self.log.trace('Ping to LogServer')
         path="status?deviceId="+str(self.deviceId)
         result=self.getRequest(path)
         updated=result['Update']
@@ -111,7 +110,7 @@ class LogClient:
 
     def putRequest(self,path,data):
         req=requests.put(self.host+path,json=data,verify=False)
-        self.log.debug("PUT '"+path+"' "+str(req.status_code))
+        self.log.trace("PUT '"+path+"' "+str(req.status_code))
         req.raise_for_status()
         return req.json()
 
@@ -119,7 +118,7 @@ class LogClient:
         if(path[0]=='/'):
             path=path[1:]
         req=requests.get(self.host+path,verify=False)
-        self.log.debug("GET '"+path+"' "+str(req.status_code))
+        self.log.trace("GET '"+path+"' "+str(req.status_code))
         req.raise_for_status()
         return req.json()
         
