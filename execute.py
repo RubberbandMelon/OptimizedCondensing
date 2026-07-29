@@ -501,9 +501,14 @@ class CondenseSequence():
 
     functions:
         - run(self, lsman, clman): executes the condense sequence
+        - ramp_step(self, setpoint): set setpoint and waits until sorb reaches it and TEMP_1K_upper_bound
     '''
 
     def __init__(self):
+        # === condense parameters ===
+        self.TEMP_1K_upper_bound = 1.9
+        self.TEMP_SORB_TOLERANCE = 0.1
+
         self.valve_sorb = Valve(
             name = 'VALVE_SORB', 
             pulse_pin = settings['VALVE_SORB_PULSE'],
@@ -544,23 +549,7 @@ class CondenseSequence():
             4. increase to 20 K wait again until T1K < 1.95 K               
                        ... 25 K ...                                         '''
         for setpoint in range(13,26):
-            # set setpoint to 15, 20, 25 K
-            lsman.set_setpoint(Command(setpoint, time.time()))
-            logger.info(f'setpoint set to {setpoint} K')
-
-            # wait for SORB to reach setpoint
-            TEMP_SORB = lsman.wait_for_next_SORB_TEMP(TEMP_SORB.timestamp)
-            while abs(TEMP_SORB.value - setpoint) > 0.25:
-                TEMP_SORB = lsman.wait_for_next_SORB_TEMP(TEMP_SORB.timestamp)
-                logger.trace(f'condense received new SORB TEMP = {TEMP_SORB.value}')
-            logger.debug(f'sorb reached approximately the setpoint={setpoint} K')
-
-            # wait for 1K to go under 1.95 K
-            TEMP_1K = lsman.wait_for_next_1K_TEMP(TEMP_1K.timestamp)
-            while TEMP_1K.value < 0 or TEMP_1K.value >= 1.95:
-                TEMP_1K = lsman.wait_for_next_1K_TEMP(TEMP_1K.timestamp)
-                logger.trace(f'condense received new 1K TEMP = {TEMP_1K.value}')
-            logger.info(f'condense: 1K TEMP under 1.95 K')
+            self.ramp_step(setpoint)
 
         ''' 5. open 1K-valve on manifold and close sorb-valve (remember to open the 1K-valve before closing the 
             sorb-valve, they should never both be closed.)  '''
@@ -579,21 +568,7 @@ class CondenseSequence():
         ''' 6. continue increasing the temperature increase to 30 K wait again until T1K < 1.95 K
                                                         ... 35 K ...                                '''
         for setpoint in range(26, 36):
-            # set setpoint to 30, 35 K
-            lsman.set_setpoint(Command(setpoint, time.time()))
-            logger.info(f'setpoint set to {setpoint}')
-
-            # wait for SORB to reach setpoint
-            TEMP_SORB = lsman.wait_for_next_SORB_TEMP(TEMP_SORB.timestamp)
-            while abs(TEMP_SORB.value - setpoint) > 0.25:
-                TEMP_SORB = lsman.wait_for_next_SORB_TEMP(TEMP_SORB.timestamp)
-            logger.debug(f'sorb reached setpoint={setpoint}')
-
-            # wait for 1K to go under 1.95 K
-            TEMP_1K = lsman.wait_for_next_1K_TEMP(TEMP_1K.timestamp)
-            while TEMP_1K.value < 0 or TEMP_1K.value >= 1.95:
-                TEMP_1K = lsman.wait_for_next_1K_TEMP(TEMP_1K.timestamp)
-            logger.info(f'1K TEMP under 1.95 K ')
+            self.ramp_step(setpoint)
 
         ''' 7. once T_sorb = 35 K is stable, set directly to 50 K setpoint'''
         # store T_sorb of the last 60 measurements and check if it is always within 0.25 K of 35 K
@@ -625,17 +600,17 @@ class CondenseSequence():
         lsman.set_heater_range(Command(3, time.time()))
         logger.info('heater range set to 3 and sorb setpoint to 12 K')
 
-        ''' 10. once Tsorb < 30K, open sorb-valve on manifold and close 1K-valve'''
-        # wait for SORB to go under 30 K
-        while TEMP_SORB.value == -1 or TEMP_SORB.value >= 30.0:
-            TEMP_SORB = lsman.wait_for_next_SORB_TEMP(TEMP_SORB.timestamp)
-        logger.info('Sorb temp under 30 K')
-
         # opening/closing valves
         logger.info('opening sorb valve')
         self.valve_sorb.open_valve()
         logger.info('sorb valve opened')
 #       time.sleep(5)
+
+        ''' 10. once Tsorb < 30K, open sorb-valve on manifold and close 1K-valve'''
+        # wait for SORB to go under 30 K
+        while TEMP_SORB.value == -1 or TEMP_SORB.value >= 30.0:
+            TEMP_SORB = lsman.wait_for_next_SORB_TEMP(TEMP_SORB.timestamp)
+        logger.info('Sorb temp under 30 K')
 
         confirmation = ''
         while confirmation != 'SORB open':
@@ -653,6 +628,32 @@ class CondenseSequence():
 
         ''' 13. 13. repeat needle valve adjustment as described above'''
         # TODO
+
+    def ramp_step(self, setpoint):
+        '''
+        ramps sorb to setpoint and waits till sorb reached that temp, also checks if 1K TEMP is < 1K_TEMP_upper_bound
+
+        Arguments:
+            - setpoint (float) : new setpoint
+
+        Returns:
+            None
+        '''
+        lsman.set_setpoint(Command(setpoint, time.time()))
+        logger.info(f'sent request to change setpoint to {setpoint}')
+
+        # wait for SORB to reach setpoint
+        TEMP_SORB = lsman.wait_for_next_SORB_TEMP(TEMP_SORB.timestamp)
+        while abs(TEMP_SORB.value - setpoint) > self.TEMP_SORB_TOLERANCE:
+            TEMP_SORB = lsman.wait_for_next_SORB_TEMP(TEMP_SORB.timestamp)
+        logger.debug(f'sorb reached setpoint={setpoint}')
+
+        # wait for 1K to go under TEMP_1K_upper_bound
+        TEMP_1K = lsman.wait_for_next_1K_TEMP(TEMP_1K.timestamp)
+        while TEMP_1K.value < 0 or TEMP_1K.value >= self.TEMP_1K_upper_bound:
+            TEMP_1K = lsman.wait_for_next_1K_TEMP(TEMP_1K.timestamp)
+        logger.debug(f'1K TEMP under {TEMP_1K_upper_bound} K ')
+        return
 
 
 

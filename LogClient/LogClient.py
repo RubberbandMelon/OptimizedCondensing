@@ -4,7 +4,7 @@ import requests
 from requests.auth import HTTPBasicAuth
 import datetime
 from getmac import get_mac_address
-import logging
+from loguru import logger 
 
 class LogClient:
     '''
@@ -38,8 +38,8 @@ class LogClient:
     '''
     def __init__(self,host='http://127.0.0.1:5000/'): 
         logging.basicConfig()
-        self.log=logging.getLogger(__name__)
-        self.log.setLevel(logging.DEBUG)#.INFO)#
+        self.log=logger.bind(component="Lakeshore340")
+        #self.log.setLevel(logging.INFO)#.INFO)#
         self.log.debug('Logging initialized')
 
         self.host=host
