@@ -543,7 +543,7 @@ class CondenseSequence():
         ''' 3. set ”setpoint” for Tsorb to 15 K −> wait until T1K < 1.9 K  
             4. increase to 20 K wait again until T1K < 1.9 K               
                        ... 25 K ...                                         '''
-        for setpoint in [15.0, 20.0, 25.0]:
+        for setpoint in np.arange(13,26):
             # set setpoint to 15, 20, 25 K
             lsman.set_setpoint(Command(setpoint, time.time()))
             logger.info(f'setpoint set to {setpoint} K')
@@ -578,7 +578,7 @@ class CondenseSequence():
 
         ''' 6. continue increasing the temperature increase to 30 K wait again until T1K < 1.9 K
                                                         ... 35 K ...                                '''
-        for setpoint in [30.0, 35.0]:
+        for setpoint in np.arange(26, 36):
             # set setpoint to 30, 35 K
             lsman.set_setpoint(Command(setpoint, time.time()))
             logger.info(f'setpoint set to {setpoint}')
