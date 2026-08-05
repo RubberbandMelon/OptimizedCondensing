@@ -392,7 +392,7 @@ class LogClientManager:
         returns: None
         '''
         # LogClient object and variables
-        self.cl = LogClient(host = 'http://127.0.0.1:5000/')
+        self.cl = LogClient(host = 'http://labmonitor.fmq.uni-stuttgart.de:8000/')
         self.cl_devType = 'Condenser RaspberryPi'
         self.cl_version = '1.0'
         self.cl.initDevice(self.cl_devType, self.cl_version)
