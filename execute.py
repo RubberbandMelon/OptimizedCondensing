@@ -29,7 +29,9 @@ settings = {
     'VALVE_SORB_OPEN' : 2,
     'VALVE_SORB_CLOSED' : 0.2,
     'VALVE_1K_OPEN' : 2,
-    'VALVE_1K_CLOSED' : 0.2
+    'VALVE_1K_CLOSED' : 0.2,
+
+    '1K_AVERAGING_DURATION': 120 # in seconds
 }
 
 # TODO: binary Labmonitor measurement for condensing
@@ -506,7 +508,6 @@ class CondenseSequence():
 
     def __init__(self):
         # === condense parameters ===
-        self.TEMP_1K_upper_bound = 1.9
         self.TEMP_SORB_TOLERANCE = 0.1
 
         self.valve_sorb = Valve(
@@ -540,6 +541,10 @@ class CondenseSequence():
 
         TEMP_1K = lsman.wait_for_next_1K_TEMP(time.time())
         TEMP_SORB = lsman.wait_for_next_SORB_TEMP(time.time())
+
+        # get mean 1K temp and set upper bound for 1K temp
+        self.TEMP_1K_upper_bound = self.get_mean_1K_temp() + 0.05
+        logger.info(f'1K TEMP upper bound set to {self.TEMP_1K_upper_bound} K')
 
         '''2. on LakeShore controller: set ”heater range” to 4 W'''
         lsman.set_heater_range(Command(4, time.time()))
@@ -657,6 +662,22 @@ class CondenseSequence():
         confirmation = ''
         while confirmation != 'confirm':
             confirmation = input('Type confirm to confirm that both valves are open:')
+
+    def get_mean_1K_temp(self):
+        logger.debug(f'Averaging 1K TEMP over {settings["1K_AVERAGING_DURATION"]} measurements...')
+        # generate array buffering 1K Temps
+        measurement_buffer = np.full(settings['1K_AVERAGING_DURATION'], -1, dtype = float)
+        latest_1K_timestamp = time.time()
+        while not np.all(measurement_buffer > 0):
+            measurement_buffer[:-1] = measurement_buffer[1:]
+            latest_1K_measurement = self.lsman.wait_for_next_1K_TEMP(latest_1K_timestamp)
+            measurement_buffer[-1] = latest_1K_measurement.value
+            latest_1K_timestamp = latest_1K_measurement.timestamp
+
+        mean_value = np.mean(measurement_buffer)
+        logger.trace(f'calculated mean 1K Temp = {mean_value} K')
+        return mean_value
+
 
 
 if __name__ == '__main__':
