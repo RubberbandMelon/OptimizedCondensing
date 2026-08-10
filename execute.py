@@ -573,33 +573,32 @@ class CondenseSequence():
 
         ''' 6. continue increasing the temperature increase to 30 K wait again until T1K < 1.95 K
                                                         ... 35 K ...                                '''
-        for setpoint in range(26, 36):
+        for setpoint in range(26, 51):
             self.ramp_step(setpoint)
 
-        ''' 7. once T_sorb = 35 K is stable, set directly to 50 K setpoint'''
-        # store T_sorb of the last 60 measurements and check if it is always within TEMP_SORB_TOLERANCE of 35 K
-        last_60_SORB_TEMP = np.full(60, 1e7, dtype = float)
-        latest_timestamp = time.time()
-        while not all(abs(last_60_SORB_TEMP - 35.0) <= self.TEMP_SORB_TOLERANCE):
-            logger.trace(f'35 K stability condition not fullfilled yet, largest = {max(last_60_SORB_TEMP)}, smallest = {min(last_60_SORB_TEMP)}')
-            # move each entry one index up
-            last_60_SORB_TEMP[:-1] = last_60_SORB_TEMP[1:]
-            latest_sorb_measurement = lsman.wait_for_next_SORB_TEMP(latest_timestamp)
-
-            # store latest measurement into last index
-            last_60_SORB_TEMP[-1] = latest_sorb_measurement.value
-            latest_timestamp = latest_sorb_measurement.timestamp
+#        ''' 7. once T_sorb = 35 K is stable, set directly to 50 K setpoint'''
+#        # store T_sorb of the last 60 measurements and check if it is always within TEMP_SORB_TOLERANCE of 35 K
+#        last_60_SORB_TEMP = np.full(60, 1e7, dtype = float)
+#        latest_timestamp = time.time()
+#        while not all(abs(last_60_SORB_TEMP - 35.0) <= self.TEMP_SORB_TOLERANCE):
+#            logger.trace(f'35 K stability condition not fullfilled yet, largest = {max(last_60_SORB_TEMP)}, smallest = {min(last_60_SORB_TEMP)}')
+#            # move each entry one index up
+#            last_60_SORB_TEMP[:-1] = last_60_SORB_TEMP[1:]
+#            latest_sorb_measurement = lsman.wait_for_next_SORB_TEMP(latest_timestamp)
+#
+#            # store latest measurement into last index
+#            last_60_SORB_TEMP[-1] = latest_sorb_measurement.value
+#            latest_timestamp = latest_sorb_measurement.timestamp
 
         # set setpoint to 50 K
-        lsman.set_setpoint(Command(50.0, time.time()))
-        logger.info('setpoint set to 50 K')
+        logger.info('sorb reached 50 K')
 
-        ''' 8. once Tsorb = 50 K is reached, set setpoint back to 12 K'''
-        # wait for SORB to reach setpoint 50 K
-        TEMP_SORB = lsman.wait_for_next_SORB_TEMP(latest_timestamp)
-        while TEMP_SORB.value < 50.0:
-            TEMP_SORB = lsman.wait_for_next_SORB_TEMP(TEMP_SORB.timestamp)
-        logger.info('reached 50 K sorb temp')
+#        ''' 8. once Tsorb = 50 K is reached, set setpoint back to 12 K'''
+#        # wait for SORB to reach setpoint 50 K
+#        TEMP_SORB = lsman.wait_for_next_SORB_TEMP(time.time())
+#        while TEMP_SORB.value < 50.0:
+#            TEMP_SORB = lsman.wait_for_next_SORB_TEMP(TEMP_SORB.timestamp)
+#        logger.info('reached 50 K sorb temp')
 
         # set setpoint to 12 K and heater range to 3 (400 mW)
         lsman.set_setpoint(Command(12.0, time.time()))
