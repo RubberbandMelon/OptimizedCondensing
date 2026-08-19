@@ -592,6 +592,7 @@ class CondenseSequence():
 
         # set setpoint to 50 K
         logger.info('sorb reached 50 K')
+        time.sleep(2700)
 
 #        ''' 8. once Tsorb = 50 K is reached, set setpoint back to 12 K'''
 #        # wait for SORB to reach setpoint 50 K
@@ -613,6 +614,7 @@ class CondenseSequence():
 
         ''' 10. once Tsorb < 40K, open sorb-valve on manifold and close 1K-valve'''
         # wait for SORB to go under 40 K
+        TEMP_SORB = lsman.wait_for_next_SORB_TEMP(time.time())
         while TEMP_SORB.value == -1 or TEMP_SORB.value >= 40.0:
             TEMP_SORB = lsman.wait_for_next_SORB_TEMP(TEMP_SORB.timestamp)
         logger.info('Sorb temp under 40 K')
