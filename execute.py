@@ -13,31 +13,35 @@ from pathlib import Path
 settings = {
     'Lakeshore340_COMport' : '/dev/ttyUSB0',
     'Lakeshore340_baud' : 9600,
-    'Lakeshore340_wait_time' : 0.1,
+    'Lakeshore340_wait_time' : 0.1, # due to hardware limitations, must be > 0.1 seconds
     '1K_TEMP_COMMAND' : 'KRDG? B',
     'SORB_TEMP_COMMAND' : 'KRDG? A',
-    'measurement_interval' : 1.0,
+    'measurement_interval' : 1.0, # start measuring all Lakeshore data every 1 second. change to 0 for continuous measuring
 
-    'VALVE_SORB_CHANNEL' : 6,
+    # motor pinout
     'VALVE_SORB_PULSE' : 17,
     'VALVE_SORB_DIR' : 27,
     'VALVE_SORB_ENA' : 22,
-    'VALVE_1K_CHANNEL' : 5,
     'VALVE_1K_PULSE' : 5,
     'VALVE_1K_DIR' :  6,
     'VALVE_1K_ENA' : 13,
-    'ADC_ADDRESSES' : (0x68, 0x68),
-    'POTI_POWER' : 19,
 
+    # poti pinout
+    'ADC_ADDRESSES' : (0x68, 0x68), # do NOT change to (0x68, 0x69) because 0x69 is burnt out!
+    'POTI_POWER' : 19, # +3.3 V pin for potis
     'VALVE_SORB_CHANNEL' : 7,
     'VALVE_1K_CHANNEL' : 8,
 
+    # valve position calibration
     'VALVE_SORB_OPEN' : 2,
     'VALVE_SORB_CLOSED' : 0.2,
     'VALVE_1K_OPEN' : 2,
     'VALVE_1K_CLOSED' : 0.2,
 
-    '1K_AVERAGING_DURATION': 120 # in seconds
+    # averaging to get mean 1K temp. mean temp + threshold is how low the 1K TEMP must go to commence the condense 
+    '1K_AVERAGING_DURATION': 120, # number of measurements, by default: number = seconds
+    '1K_THRESHOLD' : 0.05, # how much higher than the average should 1K TEMP be?
+    'TEMP_SORB_TOLERANCE' : 0.1 # tolerance for sorb temperature checks
 }
 
 # TODO: binary Labmonitor measurement for condensing
@@ -514,7 +518,6 @@ class CondenseSequence():
 
     def __init__(self):
         # === condense parameters ===
-        self.TEMP_SORB_TOLERANCE = 0.1
 
         self.valve_sorb = Valve(
             name = 'VALVE_SORB', 
@@ -549,7 +552,7 @@ class CondenseSequence():
         TEMP_SORB = lsman.wait_for_next_SORB_TEMP(time.time())
 
         # get mean 1K temp and set upper bound for 1K temp
-        self.TEMP_1K_upper_bound = self.get_mean_1K_temp() + 0.05
+        self.TEMP_1K_upper_bound = self.get_mean_1K_temp() + settings['1K_THRESHOLD']
         logger.info(f'1K TEMP upper bound set to {self.TEMP_1K_upper_bound} K')
 
         '''2. on LakeShore controller: set ”heater range” to 4 W'''
@@ -598,7 +601,7 @@ class CondenseSequence():
 
         # set setpoint to 50 K
         logger.info('sorb reached 50 K')
-        time.sleep(2700)
+        time.sleep(2700) # wait 45 minutes at T_SORB = 50 K
 
 #        ''' 8. once Tsorb = 50 K is reached, set setpoint back to 12 K'''
 #        # wait for SORB to reach setpoint 50 K
@@ -630,15 +633,6 @@ class CondenseSequence():
         logger.info('1K valve closed')
         self.ask_for_confirm()
 
-        ''' 11. adjust needle valve to T1K ≈ 2.03 K '''
-        # TODO: maybe implement telegram bot warning to come to the lab?
-
-        ''' 12. flip 3-point valve to flow controller when Tsorb < 20 K'''
-        # TODO 3-point valve might be unnecessary
-
-        ''' 13. 13. repeat needle valve adjustment as described above'''
-        # TODO
-
     def ramp_step(self, setpoint):
         '''
         ramps sorb to setpoint and waits till sorb reached that temp, also checks if 1K TEMP is < 1K_TEMP_upper_bound
@@ -654,7 +648,7 @@ class CondenseSequence():
 
         # wait for SORB to reach setpoint
         TEMP_SORB = self.lsman.wait_for_next_SORB_TEMP(time.time())
-        while abs(TEMP_SORB.value - setpoint) > self.TEMP_SORB_TOLERANCE:
+        while abs(TEMP_SORB.value - setpoint) > settings['TEMP_SORB_TOLERANCE']:
             TEMP_SORB = self.lsman.wait_for_next_SORB_TEMP(TEMP_SORB.timestamp)
         logger.debug(f'sorb reached setpoint={setpoint}')
 
