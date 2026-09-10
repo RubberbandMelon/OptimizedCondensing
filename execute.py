@@ -145,12 +145,11 @@ class Lakeshore340Manager:
         self.clman = logclient_manager
 
         #1 open Lakeshore340 connection and initialize internal LogClientManager variable 
-        if not self.lakeshore.open():
-            logger.critical('Unable to open Lakeshore340 connection!')
-            logger.critical('Shutting down measurement loop')
-            self.clman.kill()
-            return 
-        logger.info('opened connection to Lakeshore340')
+        while not self.lakeshore.open():
+            logger.critical('Unable to open Lakeshore340 connection! Retrying in 5 seconds...')
+            if self.kill_event.wait(5):
+                return
+        logger.success('Opened serial connection to Lakeshore340')
 
         #2 loop dies if kill() is called
         while not self.kill_event.is_set():
