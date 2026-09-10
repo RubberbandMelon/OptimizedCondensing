@@ -36,7 +36,7 @@ class Motor:
         GPIO.setup(self.enable_pin, GPIO.OUT)
         GPIO.output(self.pulse_pin, GPIO.LOW)
         GPIO.output(self.dir_pin, GPIO.LOW)
-        GPIO.output(self.enable_pin, GPIO.HIGH)
+        GPIO.output(self.enable_pin, GPIO.HIGH) # disable driver
 
         if name is not None:
             self.logger = logger.bind(component=f"Motor_{name}")
@@ -62,6 +62,10 @@ class Motor:
         
         half_pulse_duration = 1/(2*pulse_frequency)
 
+        # enable driver
+        GPIO.output(self.enable_pin, GPIO.LOW)
+        time.sleep(0.2)
+
         # turn direction
         if degree > 0:
             GPIO.output(self.dir_pin, GPIO.HIGH)
@@ -77,6 +81,10 @@ class Motor:
             GPIO.output(self.pulse_pin, GPIO.LOW)
             time.sleep(half_pulse_duration)
         self.logger.trace('motor turn complete!')
+
+        # disable driver
+        time.sleep(0.2)
+        GPIO.output(self.enable_pin, GPIO.HIGH)
 
     def cleanup(self):
         GPIO.output(self.enable_pin, GPIO.LOW)
