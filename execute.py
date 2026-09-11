@@ -9,6 +9,7 @@ import copy
 from loguru import logger
 import sys
 from pathlib import Path
+import signal
 
 settings = {
     'Lakeshore340_COMport' : '/dev/ttyUSB0',
@@ -145,12 +146,11 @@ class Lakeshore340Manager:
         self.clman = logclient_manager
 
         #1 open Lakeshore340 connection and initialize internal LogClientManager variable 
-        if not self.lakeshore.open():
-            logger.critical('Unable to open Lakeshore340 connection!')
-            logger.critical('Shutting down measurement loop')
-            self.clman.kill()
-            return 
-        logger.info('opened connection to Lakeshore340')
+        while not self.lakeshore.open():
+            logger.critical('Unable to open Lakeshore340 connection! Retrying in 5 seconds...')
+            if self.kill_event.wait(5):
+                return
+        logger.success('Opened serial connection to Lakeshore340')
 
         #2 loop dies if kill() is called
         while not self.kill_event.is_set():
@@ -517,8 +517,12 @@ class CondenseSequence():
     '''
 
     def __init__(self):
-        # === condense parameters ===
 
+        self.abort_event = threading.Event()        
+        self.confirmation_event = threading.Event()
+        self.waiting_for_confirmation = threading.Event()
+
+        # === condense parameters ===
         self.valve_sorb = Valve(
             name = 'VALVE_SORB', 
             pulse_pin = settings['VALVE_SORB_PULSE'],
@@ -601,7 +605,9 @@ class CondenseSequence():
 
         # set setpoint to 50 K
         logger.info('sorb reached 50 K')
-        time.sleep(2700) # wait 45 minutes at T_SORB = 50 K
+        # wait 45 minutes
+        if self.abort_event.wait(timeout=2700):
+            raise InterruptedError("Condensation aborted during 50K wait")
 
 #        ''' 8. once Tsorb = 50 K is reached, set setpoint back to 12 K'''
 #        # wait for SORB to reach setpoint 50 K
@@ -624,8 +630,12 @@ class CondenseSequence():
         ''' 10. once Tsorb < 40K, open sorb-valve on manifold and close 1K-valve'''
         # wait for SORB to go under 40 K
         TEMP_SORB = lsman.wait_for_next_SORB_TEMP(time.time())
-        while TEMP_SORB.value == -1 or TEMP_SORB.value >= 40.0:
+        while ((TEMP_SORB.value == -1 or TEMP_SORB.value >= 40.0) and not self.abort_event.is_set()):
             TEMP_SORB = lsman.wait_for_next_SORB_TEMP(TEMP_SORB.timestamp)
+
+        if self.abort_event.is_set():
+            raise InterruptedError("Condensation aborted while cooling SORB below 40 K")
+
         logger.info('Sorb temp under 40 K')
 
         logger.info('closing 1K valve')
@@ -648,41 +658,272 @@ class CondenseSequence():
 
         # wait for SORB to reach setpoint
         TEMP_SORB = self.lsman.wait_for_next_SORB_TEMP(time.time())
-        while abs(TEMP_SORB.value - setpoint) > settings['TEMP_SORB_TOLERANCE']:
+        while abs(TEMP_SORB.value - setpoint) > settings['TEMP_SORB_TOLERANCE'] and not self.abort_event.is_set():
             TEMP_SORB = self.lsman.wait_for_next_SORB_TEMP(TEMP_SORB.timestamp)
+
+        if self.abort_event.is_set():
+            raise InterruptedError("Condensation aborted during ramp step")
+
         logger.debug(f'sorb reached setpoint={setpoint}')
 
         # wait for 1K to go under TEMP_1K_upper_bound
         TEMP_1K = self.lsman.wait_for_next_1K_TEMP(time.time())
-        while TEMP_1K.value < 0 or TEMP_1K.value >= self.TEMP_1K_upper_bound:
+        while (TEMP_1K.value < 0 or TEMP_1K.value >= self.TEMP_1K_upper_bound) and not self.abort_event.is_set():
             TEMP_1K = self.lsman.wait_for_next_1K_TEMP(TEMP_1K.timestamp)
+
+        if self.abort_event.is_set():
+            raise InterruptedError("Condensation aborted during ramp step")
+
         logger.debug(f'1K TEMP under {self.TEMP_1K_upper_bound} K ')
         return
-
-    def ask_for_confirm(self):
-        confirmation = ''
-        while confirmation != 'confirm':
-            confirmation = input('Type confirm to confirm that both valves are open:')
 
     def get_mean_1K_temp(self):
         logger.debug(f'Averaging 1K TEMP over {settings["1K_AVERAGING_DURATION"]} measurements...')
         # generate array buffering 1K Temps
         measurement_buffer = np.full(settings['1K_AVERAGING_DURATION'], -1, dtype = float)
         latest_1K_timestamp = time.time()
-        while not np.all(measurement_buffer > 0):
+        while not np.all(measurement_buffer > 0) and not self.abort_event.is_set():
             measurement_buffer[:-1] = measurement_buffer[1:]
             latest_1K_measurement = self.lsman.wait_for_next_1K_TEMP(latest_1K_timestamp)
             measurement_buffer[-1] = latest_1K_measurement.value
             latest_1K_timestamp = latest_1K_measurement.timestamp
 
+        if self.abort_event.is_set():
+            raise InterruptedError("Condensation aborted during 1K TEMP averaging")
+
         mean_value = np.mean(measurement_buffer)
         logger.trace(f'calculated mean 1K Temp = {mean_value} K')
         return mean_value
 
+    def reset(self):
+        """
+        Prepare sequence for a new condensation run.
+        """
+        self.abort_event.clear()
+        self.confirmation_event.clear()
+        self.waiting_for_confirmation.clear()
 
 
-if __name__ == '__main__':
+    def ask_for_confirm(self):
+        """
+        Wait until confirmation arrives through the API.
+        """
 
+        logger.warning("Waiting for valve confirmation")
+
+        self.confirmation_event.clear()
+        self.waiting_for_confirmation.set()
+
+        try:
+            while not self.abort_event.is_set():
+
+                if self.confirmation_event.wait(timeout=0.25):
+
+                    if self.abort_event.is_set():
+                        raise InterruptedError(
+                            "Condensation aborted while waiting for confirmation"
+                        )
+
+                    logger.info("Valve state confirmed")
+                    return
+
+            raise InterruptedError(
+                "Condensation aborted while waiting for confirmation"
+            )
+
+        finally:
+            self.waiting_for_confirmation.clear()
+
+
+    def confirm(self):
+
+        if not self.waiting_for_confirmation.is_set():
+            return False
+
+        self.confirmation_event.set()
+        return True
+
+    def abort(self):
+        logger.warning("Aborting condense sequence")
+        self.abort_event.set()
+        self.confirmation_event.set()
+
+
+class CondenserController:
+
+    def __init__(self):
+
+        self.lsman = Lakeshore340Manager()
+        self.clman = LogClientManager()
+        self.condense_sequence = CondenseSequence()
+
+        self.lsman_thread = None
+        self.clman_thread = None
+        self.condense_thread = None
+
+        self.state = "IDLE"
+        self.state_lock = threading.Lock()
+
+
+    def start(self):
+
+        logger.info("Starting condenser controller")
+
+        self.lsman_thread = threading.Thread(
+            target=self.lsman.measurement_loop,
+            args=(self.clman,),
+            name="LakeshoreManager"
+        )
+
+        self.clman_thread = threading.Thread(
+            target=self.clman.logger_loop,
+            args=(self.lsman,),
+            name="LogClientManager"
+        )
+
+        self.lsman_thread.start()
+        self.clman_thread.start()
+
+        logger.success("Condenser controller ready")
+
+
+    def start_condense(self):
+
+        with self.state_lock:
+
+            # already running?
+            if (
+                self.condense_thread is not None
+                and self.condense_thread.is_alive()
+            ):
+                return False
+
+            self.condense_sequence.reset()
+
+            self.state = "CONDENSING"
+
+            self.condense_thread = threading.Thread(
+                target=self._run_condense,
+                name="CondenseSequence"
+            )
+
+            self.condense_thread.start()
+
+        return True
+
+
+    def _run_condense(self):
+
+        try:
+
+            self.condense_sequence.run(
+                self.lsman,
+                self.clman
+            )
+
+        except InterruptedError:
+
+            logger.warning("Condensation aborted")
+
+            with self.state_lock:
+                self.state = "ABORTED"
+
+        except Exception:
+
+            logger.exception("Condensation failed")
+
+            with self.state_lock:
+                self.state = "ERROR"
+
+        else:
+
+            logger.success("Condensation finished")
+
+            with self.state_lock:
+                self.state = "FINISHED"
+
+
+    def confirm(self):
+
+        return self.condense_sequence.confirm()
+
+
+    def abort_condense(self):
+
+        with self.state_lock:
+
+            if (
+                self.condense_thread is None
+                or not self.condense_thread.is_alive()
+            ):
+                return False
+
+            self.state = "ABORTING"
+
+        self.condense_sequence.abort()
+
+        return True
+
+
+    def get_status(self):
+
+        with self.state_lock:
+            state = self.state
+
+        running = (
+            self.condense_thread is not None
+            and self.condense_thread.is_alive()
+        )
+
+        # read both temperature values while the measurement
+        # thread isn't changing them
+        with self.lsman.measurement_condition:
+
+            temp_1k = self.lsman.measurement_1K.value
+            temp_sorb = self.lsman.measurement_sorb_temp.value
+
+        return {
+            "state": state,
+
+            "condense_running": running,
+
+            "waiting_for_confirmation":
+                self.condense_sequence
+                .waiting_for_confirmation
+                .is_set(),
+
+            "temp_1k": temp_1k,
+            "temp_sorb": temp_sorb,
+
+            "sorb_setpoint": self.lsman.setpoint,
+            "heater_range": self.lsman.heater_range
+        }
+
+
+    def stop(self):
+
+        logger.warning("Shutting down condenser controller")
+
+        # abort active condensation first
+        if (
+            self.condense_thread is not None
+            and self.condense_thread.is_alive()
+        ):
+            self.condense_sequence.abort()
+            self.condense_thread.join(timeout=5)
+
+        self.lsman.kill()
+        self.clman.kill()
+
+        if self.lsman_thread is not None:
+            self.lsman_thread.join(timeout=5)
+
+        if self.clman_thread is not None:
+            self.clman_thread.join(timeout=5)
+
+        logger.info("Condenser controller stopped")
+
+def configure_logger():    
     logger.configure(extra={"component": "execute"})
     log_format = (
         "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
@@ -714,40 +955,27 @@ if __name__ == '__main__':
         colorize = True
     )
 
-    # initiate manager objects
-    logger.debug('initiating manager objects')
-    lsman = Lakeshore340Manager()
-    clman = LogClientManager()
-    condense_sequence = CondenseSequence()
-    # initiate threads
-    logger.debug('initiating manager threads')
-    lsman_thread = threading.Thread(target = lsman.measurement_loop, args = (clman,))
-    clman_thread = threading.Thread(target = clman.logger_loop, args = (lsman,))
-    # start threads
-    logger.debug('starting manager threads')
-    lsman_thread.start()
-    clman_thread.start()
-    
+if __name__ == '__main__':
 
+    configure_logger()
+
+    shutdown_event = threading.Event()
+
+    def shutdown_handler(signum, frame):
+        logger.warning(f"Received shutdown signal {signum}")
+        shutdown_event.set()
+
+    signal.signal(signal.SIGTERM, shutdown_handler)
+    signal.signal(signal.SIGINT, shutdown_handler)
+
+    controller = CondenserController()
+    controller.start()
+
+    logger.info("Condenser service ready")
 
     try:
-        while True:
-            commandline_input = input("Type condense to start condense:")
-            if commandline_input.strip().lower() == "condense":
-                condense_thread = threading.Thread(
-                    target=condense_sequence.run,
-                    args=(lsman, clman),
-                    name="CondenseSequence",
-                )
-                condense_thread.start()
-                condense_thread.join()
+        while not shutdown_event.wait(timeout=1):
+            pass
 
-    except KeyboardInterrupt:
-        logger.warning("Keyboard interrupt received, shutting down")
-        lsman.kill()
-        clman.kill()
-
-        lsman_thread.join()
-        clman_thread.join()
-
-        logger.info("All manager threads stopped")
+    finally:
+        controller.stop()
