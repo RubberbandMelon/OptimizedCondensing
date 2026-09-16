@@ -1,5 +1,6 @@
 from ADCDifferentialPi import ADCDifferentialPi
 import time
+import RPi.GPIO as GPIO
 
 class LinearPotentiometer:
     '''
@@ -25,22 +26,34 @@ class LinearPotentiometer:
         adc = None,                     # if you aleady have on LinearPotentiometer object, you can pass the adc object to the next one to avoid multiple instances of the ADC class
         ADC_ADRESSES = (0x68, 0x68),    # I2C address of the ADC Differential Pi board. the chip on 0x69 is broken, only use channel 5-8 !
         CHANNEL = 5,                    # channel on which Linear Poti is connected
-        valve_OPEN = 0.0,               # calibration: voltage reading when valve is open
-        valve_CLOSED = 2.0,             # calibration: voltage reading when valve is closed
+        power_pin = 19
     ):
         self.ADC_ADDRESS_1 = ADC_ADRESSES[0]
         self.ADC_ADDRESS_2 = ADC_ADRESSES[1]
         self.CHANNEL = CHANNEL
         self.valve_OPEN = valve_OPEN
         self.valve_CLOSE = valve_CLOSED
+        self.power_pin = power_pin
 
         if adc is None:
             self.adc = ADCDifferentialPi(self.ADC_ADDRESS_1, self.ADC_ADDRESS_2)
         else:
             self.adc = adc
 
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setup(self.power_pin, GPIO.OUT)
+        GPIO.output(self.power_pin, GPIO.LOW)
+        
+
     def read_voltage(self, mute = True):
-        voltage = self.adc.read_voltage(self.CHANNEL)
+        GPIO.output(self.power_pin, GPIO.HIGH)
+        time.sleep(0.05)  # wait for the potentiometer to stabilize after powering
+        try:
+            time.sleep(0.05)
+            voltage = self.adc.read_voltage(self.CHANNEL)
+        finally:
+            GPIO.output(self.power_pin, GPIO.LOW)
+
         if not mute:
             print(f"Voltage reading from channel {self.CHANNEL}: {voltage:.3f} V")
         return voltage
@@ -57,3 +70,11 @@ class LinearPotentiometer:
             print(f"Position of ADC CHANNEL {self.CHANNEL}: {position:.3f} at {voltage:.3f} V.")
         return position
 
+    def set_calibration(self, valve_OPEN, valve_CLOSED):
+        if abs(valve_OPEN - valve_CLOSED) < 0.05:
+            raise ValueError(
+                "OPEN and CLOSED calibration values are too close"
+            )
+
+        self.valve_OPEN = float(valve_OPEN)
+        self.valve_CLOSE = float(valve_CLOSED)

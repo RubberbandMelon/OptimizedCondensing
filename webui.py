@@ -16,17 +16,23 @@ class StatusResponse(BaseModel):
     condense_running: bool
     waiting_for_confirmation: bool
 
+    calibration_state: str
+
     temp_1k: float
     temp_sorb: float
 
     sorb_setpoint: float
     heater_range: int
+    
 
 
 class CommandResponse(BaseModel):
     success: bool
     message: str
 
+class CalibrationResponse(BaseModel):
+    sorb: dict[str, float]
+    one_k: dict[str, float]
 
 # =========================================================
 # FastAPI lifespan
@@ -107,7 +113,7 @@ def start_condensation(request: Request):
 
     return {
         "success": True,
-        "message": "Condensation started"
+        "message": "Condensation started",
     }
 
 
@@ -160,4 +166,97 @@ def abort_condensation(request: Request):
     return {
         "success": True,
         "message": "Abort requested"
+    }
+
+# =========================================================
+# GET CALIBRATION
+# =========================================================
+@app.get("/calibration")
+def get_calibration(request: Request):
+
+    controller = get_controller(request)
+
+    return controller.get_calibration()
+
+@app.post("/calibration/start")
+def start_calibration(request: Request):
+
+    controller = get_controller(request)
+
+    try:
+        result = controller.start_calibration()
+
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc)
+        )
+
+    return {
+        "success": True,
+        "message": "Initial valve positions captured",
+        "calibration": result
+    }
+
+@app.post("/calibration/switch")
+def switch_calibration_valves(request: Request):
+
+    controller = get_controller(request)
+
+    try:
+        controller.switch_calibration_valves()
+
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc)
+        )
+
+    return {
+        "success": True,
+        "message": "Valves switched"
+    }
+
+@app.post("/calibration/confirm")
+def confirm_calibration(request: Request):
+
+    controller = get_controller(request)
+
+    try:
+        calibration = controller.confirm_calibration()
+
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc)
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc)
+        )
+
+    return {
+        "success": True,
+        "message": "Calibration completed",
+        "calibration": calibration
+    }
+
+@app.post("/calibration/abort")
+def abort_calibration(request: Request):
+
+    controller = get_controller(request)
+
+    success = controller.abort_calibration()
+
+    if not success:
+        raise HTTPException(
+            status_code=409,
+            detail="No calibration is currently active"
+        )
+
+    return {
+        "success": True,
+        "message": "Calibration aborted"
     }

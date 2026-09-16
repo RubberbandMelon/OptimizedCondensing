@@ -1,5 +1,6 @@
 from .Motor import Motor
 from .LinearPotentiometer import LinearPotentiometer
+from CalibrationManager import CalibrationManager
 
 from loguru import logger
 
@@ -12,10 +13,9 @@ class Valve:
         pulse_pin, 
         dir_pin,
         CHANNEL,
-        valve_OPEN,
-        valve_CLOSED,
         adc = None,
         ADC_ADRESSES = (0x68, 0x68),
+        power_pin = 19
     ):
         self.name = name
         self.linked_valve = None
@@ -27,9 +27,10 @@ class Valve:
             adc = self.ad_converter,
             ADC_ADRESSES = ADC_ADRESSES,
             CHANNEL = CHANNEL,
-            valve_OPEN = valve_OPEN,
-            valve_CLOSED = valve_CLOSED,
+            power_pin = power_pin
         )
+        self.calibration = CalibrationManager("calibration.json")
+        self.cal = self.calibration.get()
 
         if self.ad_converter is None:
             self.ad_converter = self.poti.adc
@@ -42,38 +43,50 @@ class Valve:
             self.logger.debug(f'valve {self.name} received valve {self.linked_valve.name} as linked valve')
         else:
             self.logger.error(f'linked_valve must be a different instance of type Valve, but given type={type(linked_valve)}')
-
         
     def open_valve(self):
-#        if self.linked_valve is None:
-#            self.logger.error(f'valve {self.name} was not linked at the time of opening request')
-#            return
-#        if self.is_open():
-#            self.logger.warning(f'tried opening valve {self.name}, but it is already open!')
-#            return
+        if self.linked_valve is None:
+            self.logger.error(f'valve {self.name} was not linked at the time of opening request')
+            return
+        if self.is_open():
+            self.logger.warning(f'tried opening valve {self.name}, but it is already open!')
+            return
         self.motor.turn(1030, MOTOR_REVS_PER_SECOND)
 
     def close_valve(self):
- #       if self.linked_valve is None:
- #           self.logger.error(f'valve {self.name} was not linked at the time of closing request')
- #           return
- #       if not self.linked_valve.is_open():
- #           self.logger.error(f'tried closing valve {self.name}, but linked valve {self.linked_valve.name} is already closed! aborting!')
- #           raise ValveSecurityException(f'tried closing valve {self.name}, but linked valve {self.linked_valve.name} is already closed! aborting!', valve_name = self.name)
- #       if self.is_closed():
- #           self.logger.warning(f'tried closing valve {self.name}, but it is already closed!')
- #           return
+        if self.linked_valve is None:
+            self.logger.error(f'valve {self.name} was not linked at the time of closing request')
+            return
+        if not self.linked_valve.is_open():
+            self.logger.error(f'tried closing valve {self.name}, but linked valve {self.linked_valve.name} is already closed! aborting!')
+            raise ValveSecurityException(f'tried closing valve {self.name}, but linked valve {self.linked_valve.name} is already closed! aborting!', valve_name = self.name)
+        if self.is_closed():
+            self.logger.warning(f'tried closing valve {self.name}, but it is already closed!')
+            return
         self.motor.turn(-1030, MOTOR_REVS_PER_SECOND)
 
     def is_open(self):
-        if self.poti.get_position() > 0.95:
+        if abs(self.poti.get_position()-1) < 0.05:
             return True
         return False
 
     def is_closed(self):
-        if self.poti.get_position() < 0.05:
+        if abs(self.poti.get_position()) < 0.05:
             return True
         return False
+
+    def read_calibration_voltage(self, samples=10):
+        values = []
+        for _ in range(samples):
+            values.append(self.linear_potentiometer.read_voltage())
+        return sum(values) / len(values)
+
+
+    def set_position_calibration(self, open_voltage, closed_voltage):
+        self.linear_potentiometer.set_calibration(
+            valve_OPEN=open_voltage,
+            valve_CLOSED=closed_voltage
+        )
 
 class ValveSecurityException(Exception):
     def __init__(self, message, valve_name = None, error_code = None):
