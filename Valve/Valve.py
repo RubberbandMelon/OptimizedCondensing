@@ -55,11 +55,11 @@ class Valve:
             return
         self.motor.turn(1030, MOTOR_REVS_PER_SECOND)
 
-    def close_valve(self):
+    def close_valve(self, override = False):
         if self.linked_valve is None:
             self.logger.error(f'valve {self.name} was not linked at the time of closing request')
             return
-        if not self.linked_valve.is_open():
+        if not self.linked_valve.is_open() and not override:
             self.logger.error(f'tried closing valve {self.name}, but linked valve {self.linked_valve.name} is already closed! aborting!')
             raise ValveSecurityException(f'tried closing valve {self.name}, but linked valve {self.linked_valve.name} is already closed! aborting!', valve_name = self.name)
         if self.is_closed():

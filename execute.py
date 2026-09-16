@@ -898,8 +898,8 @@ class CondenserController:
             # first open SORB,
             # THEN close 1K
 
-            self.condense_sequence.valve_sorb.open_valve()
-            self.condense_sequence.valve_1K.close_valve()
+            #self.condense_sequence.valve_sorb.open_valve()
+            #self.condense_sequence.valve_1K.close_valve()
 
             self.pending_calibration = None
             self.calibration_state = "IDLE"
@@ -1073,7 +1073,7 @@ class CondenserController:
 
             logger.info("Calibration: closing SORB valve")
 
-            self.condense_sequence.valve_sorb.close_valve()
+            self.condense_sequence.valve_sorb.close_valve(override = True)
 
             self.calibration_state = "WAITING_FOR_CONFIRMATION"
 
@@ -1156,7 +1156,7 @@ class CondenserController:
             self.condense_sequence.valve_sorb.open_valve()
 
             logger.info("Calibration: closing 1K valve")
-            self.condense_sequence.valve_1K.close_valve()
+            self.condense_sequence.valve_1K.close_valve(override = True)
 
             result = self.pending_calibration
 
