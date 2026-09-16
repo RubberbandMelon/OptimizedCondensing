@@ -1,6 +1,7 @@
 from Lakeshore340.Lakeshore340 import Lakeshore340
 from LogClient.LogClient import LogClient
 from Valve.Valve import Valve
+from Valve.CalibrationManager import CalibrationManager
 import threading
 import time
 import numpy as np
@@ -512,35 +513,46 @@ class CondenseSequence():
 
     def __init__(self):
 
-        self.abort_event = threading.Event()        
+        self.abort_event = threading.Event()
         self.confirmation_event = threading.Event()
         self.waiting_for_confirmation = threading.Event()
 
-        # === condense parameters ===
-        self.valve_sorb = Valve(
-            name = 'VALVE_SORB', 
-            pulse_pin = settings['VALVE_SORB_PULSE'],
-            dir_pin = settings['VALVE_SORB_DIR'],
-            CHANNEL = settings['VALVE_SORB_CHANNEL'],
-            ADC_ADRESSES = settings['ADC_ADDRESSES'],
-            valve_OPEN=cal["sorb"]["open"],
-            valve_CLOSED=cal["sorb"]["closed"],  
+        self.calibration = CalibrationManager(
+            Path(__file__).resolve().parent
+            / "Valve"
+            / "calibration.json"
         )
-        self.valve_1K = Valve(
-            name = 'VALVE_1K', 
-            pulse_pin = settings['VALVE_1K_PULSE'],
-            dir_pin = settings['VALVE_1K_DIR'],
-            CHANNEL = settings['VALVE_1K_CHANNEL'],
-            ADC_ADRESSES = settings['ADC_ADDRESSES'],
-            adc = self.valve_sorb.ad_converter,
+
+        cal = self.calibration.get()
+
+        self.valve_sorb = Valve(
+            name="VALVE_SORB",
+            pulse_pin=settings["VALVE_SORB_PULSE"],
+            dir_pin=settings["VALVE_SORB_DIR"],
+            CHANNEL=settings["VALVE_SORB_CHANNEL"],
+            ADC_ADRESSES=settings["ADC_ADDRESSES"],
+            power_pin=settings["POTI_POWER"],
             valve_OPEN=cal["sorb"]["open"],
             valve_CLOSED=cal["sorb"]["closed"],
         )
+
+        self.valve_1K = Valve(
+            name="VALVE_1K",
+            pulse_pin=settings["VALVE_1K_PULSE"],
+            dir_pin=settings["VALVE_1K_DIR"],
+            CHANNEL=settings["VALVE_1K_CHANNEL"],
+            ADC_ADRESSES=settings["ADC_ADDRESSES"],
+            power_pin=settings["POTI_POWER"],
+            adc=self.valve_sorb.ad_converter,
+            valve_OPEN=cal["1k"]["open"],
+            valve_CLOSED=cal["1k"]["closed"],
+        )
+
         self.valve_sorb.link_other_valve(self.valve_1K)
         self.valve_1K.link_other_valve(self.valve_sorb)
+
         self.lsman = None
         self.clman = None
-        logger.debug('CondenseSequence initialized!')
 
     def run(self, lsman, clman):
         self.lsman = lsman
@@ -758,6 +770,10 @@ class CondenserController:
         self.state = "IDLE"
         self.state_lock = threading.Lock()
 
+        self.calibration_state = "IDLE"
+        self.calibration_lock = threading.Lock()
+        self.pending_calibration = None
+
 
     def start(self):
 
@@ -863,6 +879,34 @@ class CondenserController:
         self.condense_sequence.abort()
 
         return True
+
+    def abort_calibration(self):
+
+        with self.calibration_lock:
+
+            if self.calibration_state == "IDLE":
+                return False
+
+            logger.warning("Aborting valve calibration")
+
+            self.calibration_state = "RETURNING"
+
+            # Restore default configuration safely:
+            #
+            # first open SORB,
+            # THEN close 1K
+
+            self.condense_sequence.valve_sorb.open_valve()
+            self.condense_sequence.valve_1K.close_valve()
+
+            self.pending_calibration = None
+            self.calibration_state = "IDLE"
+
+            logger.info(
+                "Calibration aborted, valves returned to default state"
+            )
+
+            return True
 
 
     def get_status(self):
@@ -1038,88 +1082,88 @@ class CondenserController:
 
             return True
 
-def confirm_calibration(self):
+    def confirm_calibration(self):
 
-    with self.calibration_lock:
+        with self.calibration_lock:
 
-        if self.calibration_state != "WAITING_FOR_CONFIRMATION":
-            raise RuntimeError(
-                "Calibration is not waiting for confirmation"
+            if self.calibration_state != "WAITING_FOR_CONFIRMATION":
+                raise RuntimeError(
+                    "Calibration is not waiting for confirmation"
+                )
+
+            # User has visually confirmed:
+            # SORB = CLOSED
+            # 1K   = OPEN
+
+            sorb_closed = (
+                self.condense_sequence
+                .valve_sorb
+                .read_calibration_voltage()
             )
 
-        # User has visually confirmed:
-        # SORB = CLOSED
-        # 1K   = OPEN
+            one_k_open = (
+                self.condense_sequence
+                .valve_1K
+                .read_calibration_voltage()
+            )
 
-        sorb_closed = (
-            self.condense_sequence
-            .valve_sorb
-            .read_calibration_voltage()
-        )
+            self.pending_calibration["sorb"]["closed"] = sorb_closed
+            self.pending_calibration["1k"]["open"] = one_k_open
 
-        one_k_open = (
-            self.condense_sequence
-            .valve_1K
-            .read_calibration_voltage()
-        )
+            logger.info(
+                f"Calibration second state captured: "
+                f"SORB CLOSED={sorb_closed:.4f} V, "
+                f"1K OPEN={one_k_open:.4f} V"
+            )
 
-        self.pending_calibration["sorb"]["closed"] = sorb_closed
-        self.pending_calibration["1k"]["open"] = one_k_open
+            # ------------------------------------------
+            # Store calibration permanently
+            # ------------------------------------------
 
-        logger.info(
-            f"Calibration second state captured: "
-            f"SORB CLOSED={sorb_closed:.4f} V, "
-            f"1K OPEN={one_k_open:.4f} V"
-        )
+            calibration = self.condense_sequence.calibration
 
-        # ------------------------------------------
-        # Store calibration permanently
-        # ------------------------------------------
+            calibration.set_all(
+                self.pending_calibration
+            )
 
-        calibration = self.condense_sequence.calibration
+            # ------------------------------------------
+            # Immediately apply new calibration
+            # ------------------------------------------
 
-        calibration.set_all(
-            self.pending_calibration
-        )
+            sorb_cal = self.pending_calibration["sorb"]
+            one_k_cal = self.pending_calibration["1k"]
 
-        # ------------------------------------------
-        # Immediately apply new calibration
-        # ------------------------------------------
+            self.condense_sequence.valve_sorb.set_position_calibration(
+                open_voltage=sorb_cal["open"],
+                closed_voltage=sorb_cal["closed"]
+            )
 
-        sorb_cal = self.pending_calibration["sorb"]
-        one_k_cal = self.pending_calibration["1k"]
+            self.condense_sequence.valve_1K.set_position_calibration(
+                open_voltage=one_k_cal["open"],
+                closed_voltage=one_k_cal["closed"]
+            )
 
-        self.condense_sequence.valve_sorb.set_position_calibration(
-            open_voltage=sorb_cal["open"],
-            closed_voltage=sorb_cal["closed"]
-        )
+            self.calibration_state = "RETURNING"
 
-        self.condense_sequence.valve_1K.set_position_calibration(
-            open_voltage=one_k_cal["open"],
-            closed_voltage=one_k_cal["closed"]
-        )
+            # ------------------------------------------
+            # Return to default valve state
+            # ------------------------------------------
 
-        self.calibration_state = "RETURNING"
+            # Again: open SORB before closing 1K
+            logger.info("Calibration: reopening SORB valve")
+            self.condense_sequence.valve_sorb.open_valve()
 
-        # ------------------------------------------
-        # Return to default valve state
-        # ------------------------------------------
+            logger.info("Calibration: closing 1K valve")
+            self.condense_sequence.valve_1K.close_valve()
 
-        # Again: open SORB before closing 1K
-        logger.info("Calibration: reopening SORB valve")
-        self.condense_sequence.valve_sorb.open_valve()
+            result = self.pending_calibration
 
-        logger.info("Calibration: closing 1K valve")
-        self.condense_sequence.valve_1K.close_valve()
+            self.pending_calibration = None
+            self.calibration_state = "IDLE"
 
-        result = self.pending_calibration
+            logger.success("Valve calibration completed")
 
-        self.pending_calibration = None
-        self.calibration_state = "IDLE"
-
-        logger.success("Valve calibration completed")
-
-        return result
+            return result
 
     def stop(self):
 

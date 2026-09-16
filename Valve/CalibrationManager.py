@@ -22,10 +22,6 @@ class CalibrationManager:
 
         self.data = self._load()
 
-        self.calibration_state = "IDLE"
-        self.calibration_lock = threading.Lock()
-        self.pending_calibration = None
-
 
     def _load(self):
 
@@ -152,30 +148,3 @@ class CalibrationManager:
             self.data = new_data
 
 
-    def abort_calibration(self):
-
-        with self.calibration_lock:
-
-            if self.calibration_state == "IDLE":
-                return False
-
-            logger.warning("Aborting valve calibration")
-
-            self.calibration_state = "RETURNING"
-
-            # Restore default configuration safely:
-            #
-            # first open SORB,
-            # THEN close 1K
-
-            self.condense_sequence.valve_sorb.open_valve()
-            self.condense_sequence.valve_1K.close_valve()
-
-            self.pending_calibration = None
-            self.calibration_state = "IDLE"
-
-            logger.info(
-                "Calibration aborted, valves returned to default state"
-            )
-
-            return True

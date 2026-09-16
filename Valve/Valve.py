@@ -1,6 +1,5 @@
 from .Motor import Motor
 from .LinearPotentiometer import LinearPotentiometer
-from CalibrationManager import CalibrationManager
 
 from loguru import logger
 
@@ -12,14 +11,17 @@ class Valve:
         name, 
         pulse_pin, 
         dir_pin,
+        enable_pin,
         CHANNEL,
         adc = None,
         ADC_ADRESSES = (0x68, 0x68),
-        power_pin = 19
+        power_pin = 19,
+        valve_OPEN=2.0,
+        valve_CLOSED=0.0
     ):
         self.name = name
         self.linked_valve = None
-        self.motor = Motor(pulse_pin, dir_pin, 25, 800, name = self.name)
+        self.motor = Motor(pulse_pin, dir_pin, enable_pin, 800, name = self.name)
         self.status = None
         self.ad_converter = adc
 
@@ -27,10 +29,10 @@ class Valve:
             adc = self.ad_converter,
             ADC_ADRESSES = ADC_ADRESSES,
             CHANNEL = CHANNEL,
-            power_pin = power_pin
+            power_pin = power_pin,
+            valve_OPEN=valve_OPEN,
+            valve_CLOSED=valve_CLOSED
         )
-        self.calibration = CalibrationManager("calibration.json")
-        self.cal = self.calibration.get()
 
         if self.ad_converter is None:
             self.ad_converter = self.poti.adc
@@ -78,12 +80,12 @@ class Valve:
     def read_calibration_voltage(self, samples=10):
         values = []
         for _ in range(samples):
-            values.append(self.linear_potentiometer.read_voltage())
+            values.append(self.poti.read_voltage())
         return sum(values) / len(values)
 
 
     def set_position_calibration(self, open_voltage, closed_voltage):
-        self.linear_potentiometer.set_calibration(
+        self.poti.set_calibration(
             valve_OPEN=open_voltage,
             valve_CLOSED=closed_voltage
         )
