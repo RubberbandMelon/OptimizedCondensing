@@ -1069,7 +1069,8 @@ class CondenserController:
 
             # IMPORTANT:
             # Open 1K first, so both valves are never closed.
-            self.condense_sequence.valve_1K.open_valve()
+            self.condense_sequence.valve_1K.open_valve(override = True)
+            time.sleep(10)
 
             logger.info("Calibration: closing SORB valve")
 
@@ -1153,7 +1154,8 @@ class CondenserController:
 
             # Again: open SORB before closing 1K
             logger.info("Calibration: reopening SORB valve")
-            self.condense_sequence.valve_sorb.open_valve()
+            self.condense_sequence.valve_sorb.open_valve(override = True)
+            time.sleep(10)
 
             logger.info("Calibration: closing 1K valve")
             self.condense_sequence.valve_1K.close_valve(override = True)

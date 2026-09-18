@@ -46,11 +46,11 @@ class Valve:
         else:
             self.logger.error(f'linked_valve must be a different instance of type Valve, but given type={type(linked_valve)}')
         
-    def open_valve(self):
+    def open_valve(self, override = False):
         if self.linked_valve is None:
             self.logger.error(f'valve {self.name} was not linked at the time of opening request')
             return
-        if self.is_open():
+        if self.is_open() and not override:
             self.logger.warning(f'tried opening valve {self.name}, but it is already open!')
             return
         self.motor.turn(1030, MOTOR_REVS_PER_SECOND)
@@ -62,7 +62,7 @@ class Valve:
         if not self.linked_valve.is_open() and not override:
             self.logger.error(f'tried closing valve {self.name}, but linked valve {self.linked_valve.name} is already closed! aborting!')
             raise ValveSecurityException(f'tried closing valve {self.name}, but linked valve {self.linked_valve.name} is already closed! aborting!', valve_name = self.name)
-        if self.is_closed():
+        if self.is_closed() and not override:
             self.logger.warning(f'tried closing valve {self.name}, but it is already closed!')
             return
         self.motor.turn(-1030, MOTOR_REVS_PER_SECOND)
