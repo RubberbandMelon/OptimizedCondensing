@@ -75,10 +75,10 @@ class Valve:
         self.motor.turn(-1030, MOTOR_REVS_PER_SECOND)
         time.sleep(1)
         if self.is_closed() and not override:
-            self.logger.debug(f'valve {self.name} is now closed')
-        else if not override:
-            self.logger.error(f'valve {self.name} failed to close!')
-            raise ValveSecurityException(f'valve {self.name} failed to close!', valve_name = self.name, error_code = 2)
+#            self.logger.debug(f'valve {self.name} is now closed')
+#        else if not override:
+#            self.logger.error(f'valve {self.name} failed to close!')
+#            raise ValveSecurityException(f'valve {self.name} failed to close!', valve_name = self.name, error_code = 2)
 
     def is_open(self):
         if abs(self.poti.get_position()) < 0.1:

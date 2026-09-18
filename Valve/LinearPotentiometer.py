@@ -44,17 +44,17 @@ class LinearPotentiometer:
 
         GPIO.setmode(GPIO.BCM)
         GPIO.setup(self.power_pin, GPIO.OUT)
-        GPIO.output(self.power_pin, GPIO.LOW)
+        GPIO.output(self.power_pin, GPIO.HIGH)
         
 
     def read_voltage(self, mute = True):
-        GPIO.output(self.power_pin, GPIO.HIGH)
-        time.sleep(0.05)  # wait for the potentiometer to stabilize after powering
-        try:
-            time.sleep(0.05)
-            voltage = self.adc.read_voltage(self.CHANNEL)
-        finally:
-            GPIO.output(self.power_pin, GPIO.LOW)
+#        GPIO.output(self.power_pin, GPIO.HIGH)
+#        time.sleep(0.05)  # wait for the potentiometer to stabilize after powering
+ #       try:
+         time.sleep(0.05)
+         voltage = self.adc.read_voltage(self.CHANNEL)
+ #       finally:
+ #           GPIO.output(self.power_pin, GPIO.LOW)
 
         if not mute:
             print(f"Voltage reading from channel {self.CHANNEL}: {voltage:.3f} V")
