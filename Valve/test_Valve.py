@@ -4,8 +4,8 @@ from pathlib import Path
 
 from loguru import logger
 
-from Valve import Valve
-from CalibrationManager import CalibrationManager
+from .Valve import Valve
+from .CalibrationManager import CalibrationManager
 
 
 # =========================================================
@@ -111,25 +111,30 @@ def main():
     logger.warning(
         "Switching valves: opening 1K valve"
     )
+    print(f'SORB: {valve_sorb.poti.get_position():.3f}, \n1K: {valve_1K.poti.get_position():.3f}')
 
     valve_1K.open_valve(
         override=True
     )
 
+    print(f'SORB: {valve_sorb.poti.get_position():.3f}, \n1K: {valve_1K.poti.get_position():.3f}')
 
     logger.warning(
         "Switching valves: closing SORB valve"
     )
+    print(f'SORB: {valve_sorb.poti.get_position():.3f}, \n1K: {valve_1K.poti.get_position():.3f}')
 
     valve_sorb.close_valve(
         override=True
     )
+    print(f'SORB: {valve_sorb.poti.get_position():.3f}, \n1K: {valve_1K.poti.get_position():.3f}')
 
 
     logger.success(
         "Valves switched:"
         " SORB CLOSED, 1K OPEN"
     )
+    print(f'SORB: {valve_sorb.poti.get_position():.3f}, \n1K: {valve_1K.poti.get_position():.3f}')
 
 
     time.sleep(10)
@@ -151,25 +156,30 @@ def main():
     logger.warning(
         "Returning valves: opening SORB valve"
     )
+    print(f'SORB: {valve_sorb.poti.get_position():.3f}, \n1K: {valve_1K.poti.get_position():.3f}')
 
     valve_sorb.open_valve(
         override=True
     )
+    print(f'SORB: {valve_sorb.poti.get_position():.3f}, \n1K: {valve_1K.poti.get_position():.3f}')
 
 
     logger.warning(
         "Returning valves: closing 1K valve"
     )
+    print(f'SORB: {valve_sorb.poti.get_position():.3f}, \n1K: {valve_1K.poti.get_position():.3f}')
 
     valve_1K.close_valve(
         override=True
     )
+    print(f'SORB: {valve_sorb.poti.get_position():.3f}, \n1K: {valve_1K.poti.get_position():.3f}')
 
 
     logger.success(
         "Finished:"
         " SORB OPEN, 1K CLOSED"
     )
+    print(f'SORB: {valve_sorb.poti.get_position():.3f}, \n1K: {valve_1K.poti.get_position():.3f}')
 
 
 if __name__ == "__main__":
