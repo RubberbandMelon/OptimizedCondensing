@@ -66,7 +66,7 @@ class Valve:
         if self.linked_valve is None:
             self.logger.error(f'valve {self.name} was not linked at the time of closing request')
             return
-        if not self.linked_valve.is_open() and not override:
+        if self.linked_valve.is_open() and not override:
             self.logger.error(f'tried closing valve {self.name}, but linked valve {self.linked_valve.name} is already closed! aborting!')
             raise ValveSecurityException(f'tried closing valve {self.name}, but linked valve {self.linked_valve.name} is already closed! aborting!', valve_name = self.name)
         if self.is_closed() and not override:
@@ -81,12 +81,12 @@ class Valve:
             raise ValveSecurityException(f'valve {self.name} failed to close!', valve_name = self.name, error_code = 2)
 
     def is_open(self):
-        if abs(self.poti.get_position()-1) < 0.1:
+        if abs(self.poti.get_position()) < 0.1:
             return True
         return False
 
     def is_closed(self):
-        if abs(self.poti.get_position()) < 0.1:
+        if abs(self.poti.get_position()-1) < 0.1:
             return True
         return False
 

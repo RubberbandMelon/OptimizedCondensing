@@ -31,8 +31,8 @@ settings = {
     # poti pinout
     'ADC_ADDRESSES' : (0x68, 0x68), # do NOT change to (0x68, 0x69) because 0x69 is burnt out!
     'POTI_POWER' : 19, # +3.3 V pin for potis
-    'VALVE_SORB_CHANNEL' : 7,
-    'VALVE_1K_CHANNEL' : 8,
+    'VALVE_SORB_CHANNEL' : 8,
+    'VALVE_1K_CHANNEL' : 7,
 
     # averaging to get mean 1K temp. mean temp + threshold is how low the 1K TEMP must go to commence the condense 
     '1K_AVERAGING_DURATION': 120, # number of measurements, by default: number = seconds
