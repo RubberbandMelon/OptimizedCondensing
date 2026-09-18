@@ -12,13 +12,13 @@ from .CalibrationManager import CalibrationManager
 # Settings
 # =========================================================
 
-VALVE_SORB_PULSE = 5
-VALVE_SORB_DIR = 6
+VALVE_SORB_PULSE = 17
+VALVE_SORB_DIR = 27
 VALVE_SORB_ENA = 22
 VALVE_SORB_CHANNEL = 7
 
-VALVE_1K_PULSE = 23
-VALVE_1K_DIR = 24
+VALVE_1K_PULSE = 5
+VALVE_1K_DIR = 6
 VALVE_1K_ENA = 13
 VALVE_1K_CHANNEL = 8
 
