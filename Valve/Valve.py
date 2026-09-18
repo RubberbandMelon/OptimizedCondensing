@@ -1,5 +1,6 @@
 from .Motor import Motor
 from .LinearPotentiometer import LinearPotentiometer
+import time
 
 from loguru import logger
 
@@ -54,11 +55,12 @@ class Valve:
             self.logger.warning(f'tried opening valve {self.name}, but it is already open!')
             return
         self.motor.turn(1030, MOTOR_REVS_PER_SECOND)
-        if self.is_open():
+        time.sleep(1)
+        if self.is_open() and not override:
             self.logger.debug(f'valve {self.name} is now open')
-        else:
+        else if not override:
             self.logger.error(f'valve {self.name} failed to open!')
-            raise ValveSecurityException(f'valve {self.name} failed to open!', valve_name = self.name, error_code = 1)
+            raise ValveSecurityException(f'valve {self.name} failed to open and is at position {self.poti.get_position()}', valve_name = self.name, error_code = 1, )
 
     def close_valve(self, override = False):
         if self.linked_valve is None:
@@ -71,19 +73,20 @@ class Valve:
             self.logger.warning(f'tried closing valve {self.name}, but it is already closed!')
             return
         self.motor.turn(-1030, MOTOR_REVS_PER_SECOND)
-        if self.is_closed():
+        time.sleep(1)
+        if self.is_closed() and not override:
             self.logger.debug(f'valve {self.name} is now closed')
-        else:
+        else if not override:
             self.logger.error(f'valve {self.name} failed to close!')
             raise ValveSecurityException(f'valve {self.name} failed to close!', valve_name = self.name, error_code = 2)
 
     def is_open(self):
-        if abs(self.poti.get_position()) < 0.1:
+        if abs(self.poti.get_position()-1) < 0.1:
             return True
         return False
 
     def is_closed(self):
-        if abs(self.poti.get_position()-1) < 0.1:
+        if abs(self.poti.get_position()) < 0.1:
             return True
         return False
 
