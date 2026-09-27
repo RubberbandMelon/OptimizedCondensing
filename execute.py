@@ -21,7 +21,7 @@ settings = {
     'measurement_interval' : 1.0, # start measuring all Lakeshore data every 1 second. change to 0 for continuous measuring
 
     # motor pinout
-    'VALVE_SORB_PULSE' : 17,
+    'VALVE_SORB_PULSE' : 4,
     'VALVE_SORB_DIR' : 27,
     'VALVE_SORB_ENA' : 22,
     'VALVE_1K_PULSE' : 5,
@@ -29,7 +29,7 @@ settings = {
     'VALVE_1K_ENA' : 13,
 
     # poti pinout
-    'ADC_ADDRESSES' : (0x68, 0x68), # do NOT change to (0x68, 0x69) because 0x69 is burnt out!
+    'ADC_ADDRESSES' : (0x68, 0x69), # do NOT change to (0x68, 0x69) because 0x69 is burnt out!
     'POTI_POWER' : 19, # +3.3 V pin for potis
     'VALVE_SORB_CHANNEL' : 8,
     'VALVE_1K_CHANNEL' : 7,

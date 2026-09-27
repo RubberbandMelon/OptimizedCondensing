@@ -89,3 +89,13 @@ class Motor:
     def cleanup(self):
         GPIO.output(self.enable_pin, GPIO.LOW)
         self.logger.debug('Motor was shut down')
+
+if __name__ == '__main__':
+    motor = Motor(4,27,22,800)
+#    GPIO.output(4, GPIO.HIGH)
+#    while True:
+#        time.sleep(1)
+    motor.turn(2000, 0.5)
+
+
+    

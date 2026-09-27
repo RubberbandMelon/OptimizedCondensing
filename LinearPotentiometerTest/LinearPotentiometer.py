@@ -23,7 +23,7 @@ class LinearPotentiometer:
     def __init__(
         self, 
         adc = None,                     # if you aleady have on LinearPotentiometer object, you can pass the adc object to the next one to avoid multiple instances of the ADC class
-        ADC_ADRESSES = (0x68, 0x68),    # I2C address of the ADC Differential Pi board. the chip on 0x69 is broken, only use channel 5-8 !
+        ADC_ADRESSES = (0x68, 0x69),    # I2C address of the ADC Differential Pi board. the chip on 0x69 is broken, only use channel 5-8 !
         CHANNEL = 5,                    # channel on which Linear Poti is connected
         valve_OPEN = 0.0,               # calibration: voltage reading when valve is open
         valve_CLOSED = 2.0,             # calibration: voltage reading when valve is closed
@@ -47,7 +47,7 @@ class LinearPotentiometer:
     
     def convert_voltages_to_positions(self):
         span = (self.valve_OPEN - self.valve_CLOSE)
-        position = (voltage() - self.valve_CLOSE) / span
+        position = (voltage() - self.valve_OPEN) / span
         return position
         
     def get_position(self, mute = True):

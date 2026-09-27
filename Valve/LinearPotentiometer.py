@@ -24,7 +24,7 @@ class LinearPotentiometer:
     def __init__(
         self, 
         adc = None,                     # if you aleady have on LinearPotentiometer object, you can pass the adc object to the next one to avoid multiple instances of the ADC class
-        ADC_ADRESSES = (0x68, 0x68),    # I2C address of the ADC Differential Pi board. the chip on 0x69 is broken, only use channel 5-8 !
+        ADC_ADRESSES = (0x68, 0x69),    # I2C address of the ADC Differential Pi board. the chip on 0x69 is broken, only use channel 5-8 !
         CHANNEL = 5,                    # channel on which Linear Poti is connected
         power_pin = 19,
         valve_OPEN=2.0,
@@ -39,6 +39,7 @@ class LinearPotentiometer:
 
         if adc is None:
             self.adc = ADCDifferentialPi(self.ADC_ADDRESS_1, self.ADC_ADDRESS_2)
+            self.adc.set_conversion_mode(0)
         else:
             self.adc = adc
 
@@ -51,8 +52,8 @@ class LinearPotentiometer:
 #        GPIO.output(self.power_pin, GPIO.HIGH)
 #        time.sleep(0.05)  # wait for the potentiometer to stabilize after powering
  #       try:
-         time.sleep(0.05)
-         voltage = self.adc.read_voltage(self.CHANNEL)
+        time.sleep(0.05)
+        voltage = self.adc.read_voltage(self.CHANNEL)
  #       finally:
  #           GPIO.output(self.power_pin, GPIO.LOW)
 
@@ -66,7 +67,7 @@ class LinearPotentiometer:
         return position
         
     def get_position(self, mute = True):
-        voltage = self.read_voltage(mute = True)
+        voltage = self.read_voltage(mute = mute)
         position = self.convert_voltages_to_positions(voltage)
         if mute == False:
             print(f"Position of ADC CHANNEL {self.CHANNEL}: {position:.3f} at {voltage:.3f} V.")
@@ -80,3 +81,26 @@ class LinearPotentiometer:
 
         self.valve_OPEN = float(valve_OPEN)
         self.valve_CLOSED = float(valve_CLOSED)
+
+if __name__ == '__main__':
+    poti = LinearPotentiometer()
+    while True:
+        for i in [1,2,3,4,5,6,7,8]:
+            print(f'CHANNEL {i}: {poti.adc.read_voltage(i)}')
+        time.sleep(1)
+    
+    adc = ADCDifferentialPi(0x69, 0x69,12)
+    adc.set_conversion_mode(0)
+
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setup(19, GPIO.OUT)
+    GPIO.output(19, GPIO.HIGH)
+    
+
+    for ch in range(1, 9):
+        print(f"Reading CH{ch}...", flush=True)
+        try:
+            v = adc.read_voltage(ch)
+            print(f"CH{ch}: {v:.4f} V")
+        except Exception as e:
+            print(f"CH{ch}: ERROR: {type(e).__name__}: {e}")
